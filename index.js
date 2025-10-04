@@ -6,6 +6,7 @@ const { swaggerSpec } = require("./config/swagger");
 const { testConnection } = require("./config/database");
 const usuarioRoutes = require("./routes/usuarioRoutes");
 const authRoutes = require("./routes/authRoutes");
+const clienteRoutes = require("./routes/clienteRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/clientes", clienteRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
