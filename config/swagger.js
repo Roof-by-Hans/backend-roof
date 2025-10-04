@@ -16,6 +16,15 @@ const swaggerOptions = {
         description: "Servidor de desarrollo",
       },
     ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+    },
   },
   apis: ["./index.js", "./routes/*.js"], // Rutas donde están las definiciones de Swagger
 };

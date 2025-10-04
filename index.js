@@ -1,9 +1,11 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const swaggerUi = require("swagger-ui-express");
 const { swaggerSpec } = require("./config/swagger");
 const { testConnection } = require("./config/database");
-require("dotenv").config();
+const usuarioRoutes = require("./routes/usuarioRoutes");
+const authRoutes = require("./routes/authRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,7 +21,9 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+app.use("/api/auth", authRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use("/api/usuarios", usuarioRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
