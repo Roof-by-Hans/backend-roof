@@ -414,7 +414,7 @@ const actualizarSaldo = async (req, res) => {
 
     const [tarjetaActualizada] = await promisePool.execute(
       `SELECT t.id_tarjeta,
-        t.numero,
+        t.uuid,
         t.id_tipo_suscripcion,
         ts.nombre AS nombre_tipo_suscripcion,
         t.id_nivel_suscripcion,
