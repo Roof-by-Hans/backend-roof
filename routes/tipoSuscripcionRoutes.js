@@ -35,8 +35,9 @@ const {
  *           example: 1
  *         nombre:
  *           type: string
- *           description: Nombre del tipo de suscripción
- *           example: "Mensual"
+ *           enum: ['PREPAGA', 'CREDITO']
+ *           description: Tipo de suscripción
+ *           example: "PREPAGA"
  */
 
 /**
@@ -135,8 +136,9 @@ router.get("/:id", authenticate, getTipoSuscripcionPorId);
  *             properties:
  *               nombre:
  *                 type: string
- *                 description: Nombre del tipo de suscripción
- *                 example: "Anual"
+ *                 enum: ['PREPAGA', 'CREDITO']
+ *                 description: Tipo de suscripción (PREPAGA o CREDITO)
+ *                 example: "PREPAGA"
  *     responses:
  *       201:
  *         description: Tipo de suscripción creado exitosamente
@@ -192,8 +194,9 @@ router.post("/", authenticate, authorizeAdmin, crearTipoSuscripcion);
  *             properties:
  *               nombre:
  *                 type: string
- *                 description: Nuevo nombre del tipo de suscripción
- *                 example: "Mensual Premium"
+ *                 enum: ['PREPAGA', 'CREDITO']
+ *                 description: Nuevo tipo de suscripción (PREPAGA o CREDITO)
+ *                 example: "CREDITO"
  *     responses:
  *       200:
  *         description: Tipo de suscripción actualizado exitosamente

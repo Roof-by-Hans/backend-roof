@@ -3,6 +3,7 @@ const {
   mapTipoSuscripcionRow,
   mapTipoSuscripcionRows,
   mapTipoSuscripcionToDB,
+  TIPOS_PERMITIDOS,
 } = require("../helpers/tipoSuscripcionMapper");
 
 /**
@@ -78,10 +79,20 @@ const crearTipoSuscripcion = async (req, res) => {
       });
     }
 
+    // Validar que el nombre sea uno de los valores permitidos del enum
+    const nombreUpper = nombre.trim().toUpperCase();
+    
+    if (!TIPOS_PERMITIDOS.includes(nombreUpper)) {
+      return res.status(400).json({
+        success: false,
+        message: `El tipo de suscripción debe ser uno de: ${TIPOS_PERMITIDOS.join(', ')}`,
+      });
+    }
+
     // Verificar si ya existe un tipo con ese nombre
     const [existente] = await promisePool.execute(
       `SELECT id_tipo FROM TipoSuscripcion WHERE nombre = ?`,
-      [nombre.trim()]
+      [nombreUpper]
     );
 
     if (existente.length > 0) {
@@ -91,7 +102,7 @@ const crearTipoSuscripcion = async (req, res) => {
       });
     }
 
-    const tipoData = mapTipoSuscripcionToDB({ nombre: nombre.trim() });
+    const tipoData = mapTipoSuscripcionToDB({ nombre: nombreUpper });
 
     const [result] = await promisePool.execute(
       `INSERT INTO TipoSuscripcion (nombre) VALUES (?)`,
@@ -148,10 +159,20 @@ const actualizarTipoSuscripcion = async (req, res) => {
       });
     }
 
+    // Validar que el nombre sea uno de los valores permitidos del enum
+    const nombreUpper = nombre.trim().toUpperCase();
+    
+    if (!TIPOS_PERMITIDOS.includes(nombreUpper)) {
+      return res.status(400).json({
+        success: false,
+        message: `El tipo de suscripción debe ser uno de: ${TIPOS_PERMITIDOS.join(', ')}`,
+      });
+    }
+
     // Verificar si ya existe otro tipo con ese nombre
     const [existente] = await promisePool.execute(
       `SELECT id_tipo FROM TipoSuscripcion WHERE nombre = ? AND id_tipo != ?`,
-      [nombre.trim(), id]
+      [nombreUpper, id]
     );
 
     if (existente.length > 0) {
@@ -163,7 +184,7 @@ const actualizarTipoSuscripcion = async (req, res) => {
 
     await promisePool.execute(
       `UPDATE TipoSuscripcion SET nombre = ? WHERE id_tipo = ?`,
-      [nombre.trim(), id]
+      [nombreUpper, id]
     );
 
     // Obtener el tipo actualizado

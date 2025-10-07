@@ -3,6 +3,9 @@
  * Transforma datos entre la base de datos y objetos JavaScript
  */
 
+// Valores permitidos para el enum
+const TIPOS_PERMITIDOS = ['PREPAGA', 'CREDITO'];
+
 /**
  * Mapea una fila de TipoSuscripcion de la BD a objeto JS
  */
@@ -11,7 +14,7 @@ const mapTipoSuscripcionRow = (row) => {
 
   return {
     id: row.id_tipo,
-    nombre: row.nombre,
+    nombre: row.nombre, // Ya viene como string del enum
   };
 };
 
@@ -36,4 +39,5 @@ module.exports = {
   mapTipoSuscripcionRow,
   mapTipoSuscripcionRows,
   mapTipoSuscripcionToDB,
+  TIPOS_PERMITIDOS,
 };
