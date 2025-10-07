@@ -8,11 +8,12 @@ const getTarjetas = async (req, res) => {
   try {
     const [rows] = await promisePool.execute(
       `SELECT t.id_tarjeta,
-        t.numero,
+        t.uuid,
         t.id_tipo_suscripcion,
         ts.nombre AS nombre_tipo_suscripcion,
         t.id_nivel_suscripcion,
         ns.nombre AS nombre_nivel_suscripcion,
+        ns.limite_credito AS limite_credito_nivel,
         t.saldo_actual
        FROM Tarjeta t
        LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
@@ -43,11 +44,12 @@ const getTarjetaPorId = async (req, res) => {
     const { id } = req.params;
     const [rows] = await promisePool.execute(
       `SELECT t.id_tarjeta,
-        t.numero,
+        t.uuid,
         t.id_tipo_suscripcion,
         ts.nombre AS nombre_tipo_suscripcion,
         t.id_nivel_suscripcion,
         ns.nombre AS nombre_nivel_suscripcion,
+        ns.limite_credito AS limite_credito_nivel,
         t.saldo_actual
        FROM Tarjeta t
        LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
@@ -86,17 +88,37 @@ const getTarjetaPorId = async (req, res) => {
 const crearTarjeta = async (req, res) => {
   try {
     const {
-      numero,
+      uuid,
       idTipoSuscripcion,
       idNivelSuscripcion,
       saldoActual,
     } = req.body;
 
     // Validaciones
-    if (!numero || !idTipoSuscripcion || !idNivelSuscripcion) {
+    if (!uuid || uuid.trim() === "") {
       return res.status(400).json({
         success: false,
-        message: "Todos los campos obligatorios deben ser proporcionados (numero, idTipoSuscripcion, idNivelSuscripcion)",
+        message: "El UUID de la tarjeta física es requerido",
+      });
+    }
+
+    if (!idTipoSuscripcion) {
+      return res.status(400).json({
+        success: false,
+        message: "El tipo de suscripción es requerido",
+      });
+    }
+
+    // Verificar que no exista una tarjeta con el mismo UUID
+    const [existente] = await promisePool.execute(
+      `SELECT id_tarjeta FROM Tarjeta WHERE uuid = ?`,
+      [uuid.trim()]
+    );
+
+    if (existente.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Ya existe una tarjeta registrada con ese UUID",
       });
     }
 
@@ -113,47 +135,45 @@ const crearTarjeta = async (req, res) => {
       });
     }
 
-    // Verificar que el nivel de suscripción existe
-    const [nivelRows] = await promisePool.execute(
-      `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
-      [idNivelSuscripcion]
-    );
+    // Verificar que el nivel de suscripción existe (si se proporciona)
+    if (idNivelSuscripcion) {
+      const [nivelRows] = await promisePool.execute(
+        `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
+        [idNivelSuscripcion]
+      );
 
-    if (nivelRows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "El nivel de suscripción especificado no existe",
-      });
+      if (nivelRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "El nivel de suscripción especificado no existe",
+        });
+      }
     }
 
-    // Verificar que no exista una tarjeta con el mismo número
-    const [existente] = await promisePool.execute(
-      `SELECT id_tarjeta FROM Tarjeta WHERE numero = ?`,
-      [numero]
-    );
-
-    if (existente.length > 0) {
-      return res.status(409).json({
+    // Validar saldo actual (debe ser un número válido)
+    const saldoFinal = saldoActual !== undefined ? parseFloat(saldoActual) : 0.00;
+    
+    if (isNaN(saldoFinal) || saldoFinal < 0) {
+      return res.status(400).json({
         success: false,
-        message: "Ya existe una tarjeta con ese número",
+        message: "El saldo actual debe ser un número válido mayor o igual a 0",
       });
     }
-
-    const saldoFinal = saldoActual !== undefined ? parseFloat(saldoActual) : 0;
 
     const [result] = await promisePool.execute(
-      `INSERT INTO Tarjeta (numero, id_tipo_suscripcion, id_nivel_suscripcion, saldo_actual)
+      `INSERT INTO Tarjeta (uuid, id_tipo_suscripcion, id_nivel_suscripcion, saldo_actual)
        VALUES (?, ?, ?, ?)`,
-      [numero, idTipoSuscripcion, idNivelSuscripcion, saldoFinal]
+      [uuid.trim(), idTipoSuscripcion, idNivelSuscripcion || null, saldoFinal]
     );
 
     const [nuevaTarjeta] = await promisePool.execute(
       `SELECT t.id_tarjeta,
-        t.numero,
+        t.uuid,
         t.id_tipo_suscripcion,
         ts.nombre AS nombre_tipo_suscripcion,
         t.id_nivel_suscripcion,
         ns.nombre AS nombre_nivel_suscripcion,
+        ns.limite_credito AS limite_credito_nivel,
         t.saldo_actual
        FROM Tarjeta t
        LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
@@ -183,7 +203,7 @@ const crearTarjeta = async (req, res) => {
 const actualizarTarjeta = async (req, res) => {
   try {
     const { id } = req.params;
-    const { numero, idTipoSuscripcion, idNivelSuscripcion, saldoActual } = req.body;
+    const { idTipoSuscripcion, idNivelSuscripcion, saldoActual } = req.body;
 
     // Verificar que la tarjeta existe
     const [tarjetaExistente] = await promisePool.execute(
@@ -201,23 +221,6 @@ const actualizarTarjeta = async (req, res) => {
     // Construir la query de actualización dinámicamente
     const campos = [];
     const valores = [];
-
-    if (numero !== undefined) {
-      // Verificar que no exista otra tarjeta con el mismo número
-      const [existente] = await promisePool.execute(
-        `SELECT id_tarjeta FROM Tarjeta WHERE numero = ? AND id_tarjeta != ?`,
-        [numero, id]
-      );
-
-      if (existente.length > 0) {
-        return res.status(409).json({
-          success: false,
-          message: "Ya existe otra tarjeta con ese número",
-        });
-      }
-      campos.push("numero = ?");
-      valores.push(numero);
-    }
 
     if (idTipoSuscripcion !== undefined) {
       // Verificar que el tipo existe
@@ -274,11 +277,12 @@ const actualizarTarjeta = async (req, res) => {
 
     const [tarjetaActualizada] = await promisePool.execute(
       `SELECT t.id_tarjeta,
-        t.numero,
+        t.uuid,
         t.id_tipo_suscripcion,
         ts.nombre AS nombre_tipo_suscripcion,
         t.id_nivel_suscripcion,
         ns.nombre AS nombre_nivel_suscripcion,
+        ns.limite_credito AS limite_credito_nivel,
         t.saldo_actual
        FROM Tarjeta t
        LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
@@ -438,349 +442,6 @@ const actualizarSaldo = async (req, res) => {
   }
 };
 
-/**
- * Validar tarjeta NFC (para lector físico - SIN autenticación)
- * Este endpoint es usado por el lector NFC para validar acceso
- */
-const validarNFC = async (req, res) => {
-  try {
-    const { uid } = req.params;
-
-    if (!uid || uid.trim() === "") {
-      return res.status(400).json({
-        success: false,
-        message: "El UID de la tarjeta NFC es requerido",
-      });
-    }
-
-    // Buscar tarjeta por UID (numero)
-    const [rows] = await promisePool.execute(
-      `SELECT t.id_tarjeta,
-        t.numero,
-        t.id_tipo_suscripcion,
-        ts.nombre AS nombre_tipo_suscripcion,
-        t.id_nivel_suscripcion,
-        ns.nombre AS nombre_nivel_suscripcion,
-        t.saldo_actual
-       FROM Tarjeta t
-       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
-       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
-       WHERE t.numero = ?`,
-      [uid]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Tarjeta NFC no registrada",
-      });
-    }
-
-    const tarjeta = rows[0];
-
-    // Verificar saldo
-    const saldo = parseFloat(tarjeta.saldo_actual);
-    if (saldo <= 0) {
-      return res.status(403).json({
-        success: false,
-        message: "Saldo insuficiente",
-        saldo: saldo,
-      });
-    }
-
-    res.json({
-      success: true,
-      data: mapTarjetaRow(tarjeta),
-      message: "Tarjeta válida - Acceso permitido",
-    });
-  } catch (error) {
-    console.error("Error al validar NFC:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al validar la tarjeta NFC",
-      error: error.message,
-    });
-  }
-};
-
-/**
- * Descontar saldo de tarjeta NFC (para lector físico - SIN autenticación)
- * Se usa cuando el usuario pasa la tarjeta en el lector
- */
-const descontarSaldo = async (req, res) => {
-  const connection = await promisePool.getConnection();
-  try {
-    const { uid } = req.params;
-    const { monto, concepto } = req.body;
-
-    if (!uid || uid.trim() === "") {
-      return res.status(400).json({
-        success: false,
-        message: "El UID de la tarjeta NFC es requerido",
-      });
-    }
-
-    if (!monto || monto <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "El monto debe ser mayor a 0",
-      });
-    }
-
-    await connection.beginTransaction();
-
-    // Buscar tarjeta
-    const [rows] = await connection.execute(
-      `SELECT t.id_tarjeta,
-        t.numero,
-        t.id_tipo_suscripcion,
-        ts.nombre AS nombre_tipo_suscripcion,
-        t.id_nivel_suscripcion,
-        ns.nombre AS nombre_nivel_suscripcion,
-        t.saldo_actual
-       FROM Tarjeta t
-       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
-       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
-       WHERE t.numero = ?`,
-      [uid]
-    );
-
-    if (rows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Tarjeta NFC no encontrada",
-      });
-    }
-
-    const tarjeta = rows[0];
-    const saldoActual = parseFloat(tarjeta.saldo_actual);
-
-    // Verificar saldo suficiente
-    if (saldoActual < monto) {
-      await connection.rollback();
-      return res.status(400).json({
-        success: false,
-        message: "Saldo insuficiente",
-        saldoActual: saldoActual,
-        montoRequerido: monto,
-      });
-    }
-
-    const nuevoSaldo = saldoActual - monto;
-
-    // Actualizar saldo
-    await connection.execute(
-      `UPDATE Tarjeta SET saldo_actual = ? WHERE id_tarjeta = ?`,
-      [nuevoSaldo, tarjeta.id_tarjeta]
-    );
-
-    await connection.commit();
-
-    // Obtener tarjeta actualizada
-    const [tarjetaActualizada] = await connection.execute(
-      `SELECT t.id_tarjeta,
-        t.numero,
-        t.id_tipo_suscripcion,
-        ts.nombre AS nombre_tipo_suscripcion,
-        t.id_nivel_suscripcion,
-        ns.nombre AS nombre_nivel_suscripcion,
-        t.saldo_actual
-       FROM Tarjeta t
-       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
-       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
-       WHERE t.id_tarjeta = ?`,
-      [tarjeta.id_tarjeta]
-    );
-
-    res.json({
-      success: true,
-      data: mapTarjetaRow(tarjetaActualizada[0]),
-      message: "Saldo descontado exitosamente",
-      movimiento: {
-        concepto: concepto || "Uso de tarjeta NFC",
-        montoDescontado: monto,
-        saldoAnterior: saldoActual,
-        saldoNuevo: nuevoSaldo,
-      },
-    });
-  } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
-    console.error("Error al descontar saldo:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al descontar saldo",
-      error: error.message,
-    });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
-  }
-};
-
-/**
- * Recargar saldo de tarjeta NFC (para terminal de recarga - SIN autenticación)
- * Este endpoint es usado por el punto de recarga para agregar saldo
- */
-const recargarSaldo = async (req, res) => {
-  let connection;
-
-  try {
-    const { uid } = req.params;
-    const { monto, metodoPago } = req.body;
-
-    if (!uid || uid.trim() === "") {
-      return res.status(400).json({
-        success: false,
-        message: "UID de tarjeta NFC requerido",
-      });
-    }
-
-    if (!monto || monto <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: "El monto debe ser mayor a 0",
-      });
-    }
-
-    connection = await promisePool.getConnection();
-    await connection.beginTransaction();
-
-    // Buscar tarjeta
-    const [rows] = await connection.execute(
-      `SELECT t.id_tarjeta,
-        t.numero,
-        t.id_tipo_suscripcion,
-        ts.nombre AS nombre_tipo_suscripcion,
-        t.id_nivel_suscripcion,
-        ns.nombre AS nombre_nivel_suscripcion,
-        t.saldo_actual
-       FROM Tarjeta t
-       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
-       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
-       WHERE t.numero = ?`,
-      [uid]
-    );
-
-    if (rows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        success: false,
-        message: "Tarjeta NFC no encontrada",
-      });
-    }
-
-    const tarjeta = rows[0];
-    const saldoActual = parseFloat(tarjeta.saldo_actual);
-    const nuevoSaldo = saldoActual + parseFloat(monto);
-
-    // Actualizar saldo
-    await connection.execute(
-      `UPDATE Tarjeta SET saldo_actual = ? WHERE id_tarjeta = ?`,
-      [nuevoSaldo, tarjeta.id_tarjeta]
-    );
-
-    // Opcional: Registrar movimiento si tienes tabla MovimientoTarjeta
-    // await connection.execute(
-    //   `INSERT INTO MovimientoTarjeta (id_tarjeta, tipo_movimiento, monto, saldo_anterior, saldo_nuevo, metodo_pago, fecha)
-    //    VALUES (?, 'RECARGA', ?, ?, ?, ?, NOW())`,
-    //   [tarjeta.id_tarjeta, monto, saldoActual, nuevoSaldo, metodoPago || 'EFECTIVO']
-    // );
-
-    await connection.commit();
-
-    // Obtener tarjeta actualizada
-    const [tarjetaActualizada] = await connection.execute(
-      `SELECT t.id_tarjeta,
-        t.numero,
-        t.id_tipo_suscripcion,
-        ts.nombre AS nombre_tipo_suscripcion,
-        t.id_nivel_suscripcion,
-        ns.nombre AS nombre_nivel_suscripcion,
-        t.saldo_actual
-       FROM Tarjeta t
-       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
-       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
-       WHERE t.id_tarjeta = ?`,
-      [tarjeta.id_tarjeta]
-    );
-
-    res.json({
-      success: true,
-      data: mapTarjetaRow(tarjetaActualizada[0]),
-      message: "Saldo recargado exitosamente",
-      movimiento: {
-        concepto: "Recarga de saldo",
-        montoRecargado: parseFloat(monto),
-        metodoPago: metodoPago || "EFECTIVO",
-        saldoAnterior: saldoActual,
-        saldoNuevo: nuevoSaldo,
-      },
-    });
-  } catch (error) {
-    if (connection) {
-      await connection.rollback();
-    }
-    console.error("Error al recargar saldo:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al recargar saldo",
-      error: error.message,
-    });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
-  }
-};
-
-/**
- * Buscar tarjeta por UID de NFC (requiere autenticación)
- */
-const buscarPorUID = async (req, res) => {
-  try {
-    const { uid } = req.params;
-
-    const [rows] = await promisePool.execute(
-      `SELECT t.id_tarjeta,
-        t.numero,
-        t.id_tipo_suscripcion,
-        ts.nombre AS nombre_tipo_suscripcion,
-        t.id_nivel_suscripcion,
-        ns.nombre AS nombre_nivel_suscripcion,
-        t.saldo_actual
-       FROM Tarjeta t
-       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
-       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
-       WHERE t.numero = ?`,
-      [uid]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Tarjeta no encontrada",
-      });
-    }
-
-    res.json({
-      success: true,
-      data: mapTarjetaRow(rows[0]),
-      message: "Tarjeta encontrada",
-    });
-  } catch (error) {
-    console.error("Error al buscar por UID:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error al buscar la tarjeta",
-      error: error.message,
-    });
-  }
-};
-
 module.exports = {
   getTarjetas,
   getTarjetaPorId,
@@ -788,8 +449,4 @@ module.exports = {
   actualizarTarjeta,
   eliminarTarjeta,
   actualizarSaldo,
-  validarNFC,
-  descontarSaldo,
-  recargarSaldo,
-  buscarPorUID,
 };

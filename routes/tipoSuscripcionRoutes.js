@@ -16,7 +16,7 @@ const {
  * @swagger
  * tags:
  *   name: TipoSuscripcion
- *   description: Endpoints para gestionar tipos de suscripción
+ *   description: Endpoints para gestionar tipos de suscripción (PREPAGA o CREDITO)
  */
 
 /**
@@ -36,7 +36,17 @@ const {
  *         nombre:
  *           type: string
  *           enum: ['PREPAGA', 'CREDITO']
- *           description: Tipo de suscripción
+ *           description: Tipo de suscripción - PREPAGA (tarjeta prepaga) o CREDITO (tarjeta de crédito)
+ *           example: "PREPAGA"
+ *     TipoSuscripcionInput:
+ *       type: object
+ *       required:
+ *         - nombre
+ *       properties:
+ *         nombre:
+ *           type: string
+ *           enum: ['PREPAGA', 'CREDITO']
+ *           description: Tipo de suscripción a crear/actualizar
  *           example: "PREPAGA"
  */
 
@@ -121,7 +131,10 @@ router.get("/:id", authenticate, getTipoSuscripcionPorId);
  * /api/tipos-suscripcion:
  *   post:
  *     summary: Crear un nuevo tipo de suscripción
- *     description: Crea un nuevo tipo de suscripción en el sistema. Requiere permisos de administrador
+ *     description: |
+ *       Crea un nuevo tipo de suscripción en el sistema. 
+ *       Solo se permiten los valores: PREPAGA o CREDITO.
+ *       Requiere permisos de administrador.
  *     tags: [TipoSuscripcion]
  *     security:
  *       - bearerAuth: []
@@ -130,15 +143,7 @@ router.get("/:id", authenticate, getTipoSuscripcionPorId);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - nombre
- *             properties:
- *               nombre:
- *                 type: string
- *                 enum: ['PREPAGA', 'CREDITO']
- *                 description: Tipo de suscripción (PREPAGA o CREDITO)
- *                 example: "PREPAGA"
+ *             $ref: '#/components/schemas/TipoSuscripcionInput'
  *     responses:
  *       201:
  *         description: Tipo de suscripción creado exitosamente
@@ -156,7 +161,22 @@ router.get("/:id", authenticate, getTipoSuscripcionPorId);
  *                   type: string
  *                   example: "Tipo de suscripción creado exitosamente"
  *       400:
- *         description: Datos inválidos o tipo ya existe
+ *         description: |
+ *           Datos inválidos:
+ *           - Tipo ya existe
+ *           - El nombre debe ser 'PREPAGA' o 'CREDITO'
+ *           - Campo nombre requerido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "El tipo de suscripción debe ser uno de: PREPAGA, CREDITO"
  *       401:
  *         description: No autenticado
  *       403:
@@ -171,7 +191,10 @@ router.post("/", authenticate, authorizeAdmin, crearTipoSuscripcion);
  * /api/tipos-suscripcion/{id}:
  *   put:
  *     summary: Actualizar un tipo de suscripción
- *     description: Actualiza los datos de un tipo de suscripción existente. Requiere permisos de administrador
+ *     description: |
+ *       Actualiza los datos de un tipo de suscripción existente. 
+ *       Solo se permiten los valores: PREPAGA o CREDITO.
+ *       Requiere permisos de administrador.
  *     tags: [TipoSuscripcion]
  *     security:
  *       - bearerAuth: []
@@ -188,15 +211,7 @@ router.post("/", authenticate, authorizeAdmin, crearTipoSuscripcion);
  *       content:
  *         application/json:
  *           schema:
- *             type: object
- *             required:
- *               - nombre
- *             properties:
- *               nombre:
- *                 type: string
- *                 enum: ['PREPAGA', 'CREDITO']
- *                 description: Nuevo tipo de suscripción (PREPAGA o CREDITO)
- *                 example: "CREDITO"
+ *             $ref: '#/components/schemas/TipoSuscripcionInput'
  *     responses:
  *       200:
  *         description: Tipo de suscripción actualizado exitosamente
@@ -214,7 +229,22 @@ router.post("/", authenticate, authorizeAdmin, crearTipoSuscripcion);
  *                   type: string
  *                   example: "Tipo de suscripción actualizado exitosamente"
  *       400:
- *         description: Datos inválidos
+ *         description: |
+ *           Datos inválidos:
+ *           - Otro tipo ya existe con ese nombre
+ *           - El nombre debe ser 'PREPAGA' o 'CREDITO'
+ *           - Campo nombre requerido
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "El tipo de suscripción debe ser uno de: PREPAGA, CREDITO"
  *       401:
  *         description: No autenticado
  *       403:

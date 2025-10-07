@@ -7,10 +7,6 @@ const {
   actualizarTarjeta,
   eliminarTarjeta,
   actualizarSaldo,
-  validarNFC,
-  descontarSaldo,
-  recargarSaldo,
-  buscarPorUID,
 } = require("../controllers/tarjetaController");
 const {
   authenticate,
@@ -32,73 +28,72 @@ const {
  *       type: object
  *       required:
  *         - id
- *         - numero
+ *         - uuid
  *         - idTipoSuscripcion
- *         - idNivelSuscripcion
  *         - saldoActual
  *       properties:
  *         id:
  *           type: integer
  *           description: Identificador único de la tarjeta en la base de datos
  *           example: 1
- *         numero:
+ *         uuid:
  *           type: string
- *           description: Número identificador de la tarjeta
- *           example: "ROOF-001-2025"
+ *           description: UUID único de la tarjeta física
+ *           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
  *         idTipoSuscripcion:
  *           type: integer
- *           description: ID del tipo de suscripción
+ *           description: ID del tipo de suscripción (requerido)
  *           example: 1
  *         nombreTipoSuscripcion:
  *           type: string
  *           description: Nombre del tipo de suscripción
- *           example: "Premium"
+ *           example: "PREPAGA"
  *         idNivelSuscripcion:
  *           type: integer
- *           description: ID del nivel de suscripción
+ *           description: ID del nivel de suscripción (opcional)
  *           example: 2
  *         nombreNivelSuscripcion:
  *           type: string
  *           description: Nombre del nivel de suscripción
- *           example: "Gold"
+ *           example: "Black"
+ *         limiteCreditoNivel:
+ *           type: number
+ *           format: decimal
+ *           description: Límite de crédito del nivel de suscripción
+ *           example: 50000.00
  *         saldoActual:
  *           type: number
- *           format: float
+ *           format: decimal
  *           description: Saldo actual disponible en la tarjeta
  *           example: 5000.50
  *
  *     TarjetaInput:
  *       type: object
  *       required:
- *         - numero
+ *         - uuid
  *         - idTipoSuscripcion
- *         - idNivelSuscripcion
  *       properties:
- *         numero:
+ *         uuid:
  *           type: string
- *           description: Número identificador de la tarjeta (debe ser único)
- *           example: "ROOF-001-2025"
+ *           description: UUID único de la tarjeta física (debe ser único)
+ *           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
  *         idTipoSuscripcion:
  *           type: integer
- *           description: ID del tipo de suscripción
+ *           description: ID del tipo de suscripción (1=PREPAGA, 2=CREDITO)
  *           example: 1
  *         idNivelSuscripcion:
  *           type: integer
- *           description: ID del nivel de suscripción
+ *           description: ID del nivel de suscripción (opcional)
  *           example: 2
  *         saldoActual:
  *           type: number
- *           format: float
- *           description: Saldo inicial (opcional, por defecto 0)
+ *           format: decimal
+ *           description: Saldo inicial (opcional, por defecto 0.00)
  *           example: 1000.00
  *
  *     TarjetaUpdate:
  *       type: object
  *       properties:
- *         numero:
- *           type: string
- *           description: Nuevo número de la tarjeta
- *           example: "ROOF-001-2026"
  *         idTipoSuscripcion:
  *           type: integer
  *           description: Nuevo tipo de suscripción
@@ -109,7 +104,7 @@ const {
  *           example: 3
  *         saldoActual:
  *           type: number
- *           format: float
+ *           format: decimal
  *           description: Nuevo saldo
  *           example: 2500.00
  *
@@ -121,7 +116,7 @@ const {
  *       properties:
  *         monto:
  *           type: number
- *           format: float
+ *           format: decimal
  *           description: Monto a agregar o restar
  *           example: 500.00
  *         operacion:
@@ -273,7 +268,9 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  * /api/tarjetas:
  *   post:
  *     summary: Crear una nueva tarjeta
- *     description: Registra una nueva tarjeta en el sistema con un tipo y nivel de suscripción
+ *     description: |
+ *       Registra una nueva tarjeta física en el sistema.
+ *       El UUID debe obtenerse de la tarjeta física y debe ser único.
  *     tags: [Tarjetas]
  *     security:
  *       - bearerAuth: []
@@ -285,12 +282,18 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *             $ref: '#/components/schemas/TarjetaInput'
  *           examples:
  *             ejemplo1:
- *               summary: Tarjeta Premium Gold
+ *               summary: Tarjeta PREPAGA con nivel Black
  *               value:
- *                 numero: "ROOF-001-2025"
+ *                 uuid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
  *                 idTipoSuscripcion: 1
  *                 idNivelSuscripcion: 2
  *                 saldoActual: 1000.00
+ *             ejemplo2:
+ *               summary: Tarjeta CREDITO sin nivel específico
+ *               value:
+ *                 uuid: "b2c3d4e5-f6g7-8901-bcde-f23456789012"
+ *                 idTipoSuscripcion: 2
+ *                 saldoActual: 0.00
  *     responses:
  *       201:
  *         description: Tarjeta creada exitosamente
@@ -308,35 +311,42 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *                   type: string
  *                   example: "Tarjeta creada exitosamente"
  *       400:
- *         description: Datos inválidos
+ *         description: |
+ *           Datos inválidos:
+ *           - UUID requerido
+ *           - UUID vacío o inválido
+ *           - Saldo inválido (debe ser >= 0)
+ *           - Tipo de suscripción requerido
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "El UUID de la tarjeta física es requerido"
  *       401:
  *         description: No autenticado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
  *       403:
- *         description: Sin permisos
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *         description: Sin permisos (requiere rol admin)
  *       404:
  *         description: Tipo o nivel de suscripción no encontrado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
  *       409:
- *         description: Número de tarjeta ya existe
+ *         description: UUID ya registrado
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Ya existe una tarjeta registrada con ese UUID"
  *       500:
  *         description: Error interno del servidor
  *         content:
@@ -351,7 +361,9 @@ router.post("/", authenticate, authorizeAdmin, crearTarjeta);
  * /api/tarjetas/{id}:
  *   put:
  *     summary: Actualizar una tarjeta
- *     description: Actualiza los datos de una tarjeta existente (número, tipo de suscripción, nivel o saldo)
+ *     description: |
+ *       Actualiza los datos de una tarjeta existente.
+ *       Nota: El UUID no se puede modificar ya que corresponde a la tarjeta física.
  *     tags: [Tarjetas]
  *     security:
  *       - bearerAuth: []
@@ -361,7 +373,7 @@ router.post("/", authenticate, authorizeAdmin, crearTarjeta);
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID de la tarjeta
+ *         description: ID de la tarjeta en la base de datos
  *         example: 1
  *     requestBody:
  *       required: true
@@ -375,8 +387,9 @@ router.post("/", authenticate, authorizeAdmin, crearTarjeta);
  *               value:
  *                 idNivelSuscripcion: 3
  *             ejemplo2:
- *               summary: Actualizar saldo
+ *               summary: Actualizar saldo y tipo
  *               value:
+ *                 idTipoSuscripcion: 2
  *                 saldoActual: 5000.00
  *     responses:
  *       200:
@@ -573,298 +586,5 @@ router.patch("/:id/saldo", authenticate, authorizeAdmin, actualizarSaldo);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.delete("/:id", authenticate, authorizeAdmin, eliminarTarjeta);
-
-// ========================================
-// ENDPOINTS PARA SISTEMA NFC (Sin autenticación JWT)
-// Estos endpoints son usados por el lector NFC físico
-// ========================================
-
-/**
- * @swagger
- * /api/tarjetas/nfc/validar/{uid}:
- *   get:
- *     summary: Validar tarjeta NFC (para lector físico)
- *     description: Valida si una tarjeta NFC es válida y tiene saldo. No requiere autenticación JWT ya que es usado directamente por el lector NFC físico
- *     tags: [Tarjetas]
- *     parameters:
- *       - in: path
- *         name: uid
- *         required: true
- *         schema:
- *           type: string
- *         description: UID único de la tarjeta NFC física
- *         example: "A1B2C3D4E5F6"
- *     responses:
- *       200:
- *         description: Tarjeta válida - Acceso permitido
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/Tarjeta'
- *                 message:
- *                   type: string
- *                   example: "Tarjeta válida - Acceso permitido"
- *       400:
- *         description: UID inválido
- *       403:
- *         description: Saldo insuficiente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Saldo insuficiente"
- *                 saldo:
- *                   type: number
- *                   example: 0
- *       404:
- *         description: Tarjeta no registrada
- *       500:
- *         description: Error interno del servidor
- */
-router.get("/nfc/validar/:uid", validarNFC);
-
-/**
- * @swagger
- * /api/tarjetas/nfc/descontar/{uid}:
- *   post:
- *     summary: Descontar saldo de tarjeta NFC (para lector físico)
- *     description: Descuenta un monto del saldo de la tarjeta cuando se usa. No requiere autenticación JWT ya que es usado directamente por el lector NFC físico. Usa transacciones para garantizar consistencia
- *     tags: [Tarjetas]
- *     parameters:
- *       - in: path
- *         name: uid
- *         required: true
- *         schema:
- *           type: string
- *         description: UID único de la tarjeta NFC física
- *         example: "A1B2C3D4E5F6"
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - monto
- *             properties:
- *               monto:
- *                 type: number
- *                 format: float
- *                 description: Monto a descontar del saldo
- *                 example: 50.00
- *               concepto:
- *                 type: string
- *                 description: Descripción del uso (opcional)
- *                 example: "Entrada gimnasio"
- *           examples:
- *             entrada:
- *               summary: Entrada al gimnasio
- *               value:
- *                 monto: 50.00
- *                 concepto: "Entrada gimnasio"
- *             clase:
- *               summary: Clase de spinning
- *               value:
- *                 monto: 75.00
- *                 concepto: "Clase spinning"
- *     responses:
- *       200:
- *         description: Saldo descontado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/Tarjeta'
- *                 message:
- *                   type: string
- *                   example: "Saldo descontado exitosamente"
- *                 movimiento:
- *                   type: object
- *                   properties:
- *                     concepto:
- *                       type: string
- *                       example: "Entrada gimnasio"
- *                     montoDescontado:
- *                       type: number
- *                       example: 50.00
- *                     saldoAnterior:
- *                       type: number
- *                       example: 500.00
- *                     saldoNuevo:
- *                       type: number
- *                       example: 450.00
- *       400:
- *         description: Datos inválidos o saldo insuficiente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Saldo insuficiente"
- *                 saldoActual:
- *                   type: number
- *                   example: 30.00
- *                 montoRequerido:
- *                   type: number
- *                   example: 50.00
- *       404:
- *         description: Tarjeta no encontrada
- *       500:
- *         description: Error interno del servidor
- */
-router.post("/nfc/descontar/:uid", descontarSaldo);
-
-/**
- * @swagger
- * /api/tarjetas/nfc/recargar/{uid}:
- *   post:
- *     summary: Recargar saldo de tarjeta NFC (sin autenticación - para terminal de recarga)
- *     description: Agrega saldo a una tarjeta NFC. Endpoint público usado por terminales de recarga físicos
- *     tags: [Tarjetas]
- *     parameters:
- *       - in: path
- *         name: uid
- *         required: true
- *         schema:
- *           type: string
- *         description: UID único de la tarjeta NFC física
- *         example: "A1B2C3D4E5F6"
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - monto
- *             properties:
- *               monto:
- *                 type: number
- *                 description: Monto a recargar (debe ser mayor a 0)
- *                 example: 500.00
- *               metodoPago:
- *                 type: string
- *                 description: Método de pago utilizado (opcional)
- *                 example: "EFECTIVO"
- *                 enum: [EFECTIVO, TARJETA_DEBITO, TARJETA_CREDITO, TRANSFERENCIA]
- *     responses:
- *       200:
- *         description: Saldo recargado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/Tarjeta'
- *                 message:
- *                   type: string
- *                   example: "Saldo recargado exitosamente"
- *                 movimiento:
- *                   type: object
- *                   properties:
- *                     concepto:
- *                       type: string
- *                       example: "Recarga de saldo"
- *                     montoRecargado:
- *                       type: number
- *                       example: 500.00
- *                     metodoPago:
- *                       type: string
- *                       example: "EFECTIVO"
- *                     saldoAnterior:
- *                       type: number
- *                       example: 150.00
- *                     saldoNuevo:
- *                       type: number
- *                       example: 650.00
- *       400:
- *         description: Datos inválidos (monto debe ser mayor a 0)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "El monto debe ser mayor a 0"
- *       404:
- *         description: Tarjeta no encontrada
- *       500:
- *         description: Error interno del servidor
- */
-router.post("/nfc/recargar/:uid", recargarSaldo);
-
-/**
- * @swagger
- * /api/tarjetas/nfc/buscar/{uid}:
- *   get:
- *     summary: Buscar tarjeta por UID (administrativo)
- *     description: Busca una tarjeta por su UID de NFC. Requiere autenticación y permisos de administrador
- *     tags: [Tarjetas]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: uid
- *         required: true
- *         schema:
- *           type: string
- *         description: UID único de la tarjeta NFC física
- *         example: "A1B2C3D4E5F6"
- *     responses:
- *       200:
- *         description: Tarjeta encontrada
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/Tarjeta'
- *                 message:
- *                   type: string
- *                   example: "Tarjeta encontrada"
- *       401:
- *         description: No autenticado
- *       403:
- *         description: Sin permisos
- *       404:
- *         description: Tarjeta no encontrada
- *       500:
- *         description: Error interno del servidor
- */
-router.get("/nfc/buscar/:uid", authenticate, authorizeAdmin, buscarPorUID);
 
 module.exports = router;

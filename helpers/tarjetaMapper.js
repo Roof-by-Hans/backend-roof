@@ -8,12 +8,13 @@ const mapTarjetaRow = (row) => {
 
   return {
     id: row.id_tarjeta,
-    numero: row.numero,
+    uuid: row.uuid,
     idTipoSuscripcion: row.id_tipo_suscripcion,
     nombreTipoSuscripcion: row.nombre_tipo_suscripcion || null,
     idNivelSuscripcion: row.id_nivel_suscripcion,
     nombreNivelSuscripcion: row.nombre_nivel_suscripcion || null,
-    saldoActual: parseFloat(row.saldo_actual) || 0,
+    limiteCreditoNivel: row.limite_credito_nivel ? parseFloat(row.limite_credito_nivel) : null,
+    saldoActual: parseFloat(row.saldo_actual) || 0.00,
   };
 };
 
