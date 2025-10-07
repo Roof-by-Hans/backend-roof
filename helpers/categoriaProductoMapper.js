@@ -1,6 +1,6 @@
 const normalizeNombre = (valor) => {
   if (valor === undefined || valor === null) return "";
-  return String(valor);
+  return String(valor).trim();
 };
 
 const mapCategoriaRow = (row = {}) => {
