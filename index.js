@@ -4,8 +4,10 @@ const cors = require("cors");
 const swaggerUi = require("swagger-ui-express");
 const { swaggerSpec } = require("./config/swagger");
 const { testConnection } = require("./config/database");
-const usuarioRoutes = require("./routes/usuarioRoutes");
 const authRoutes = require("./routes/authRoutes");
+const usuarioRoutes = require("./routes/usuarioRoutes");
+const categoriaProductoRoutes = require("./routes/categoriaProductoRoutes");
+const productoRoutes = require("./routes/productoRoutes");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,6 +26,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/categorias-producto", categoriaProductoRoutes);
+app.use("/api/productos", productoRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
