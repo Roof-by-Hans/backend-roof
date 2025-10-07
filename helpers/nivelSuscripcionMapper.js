@@ -12,6 +12,7 @@ const mapNivelSuscripcionRow = (row) => {
   return {
     id: row.id_nivel,
     nombre: row.nombre,
+    limite_credito: parseFloat(row.limite_credito),
   };
 };
 
@@ -29,6 +30,7 @@ const mapNivelSuscripcionRows = (rows) => {
 const mapNivelSuscripcionToDB = (nivelSuscripcion) => {
   return {
     nombre: nivelSuscripcion.nombre,
+    limite_credito: nivelSuscripcion.limite_credito,
   };
 };
 

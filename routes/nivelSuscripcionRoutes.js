@@ -28,6 +28,7 @@ const {
  *       required:
  *         - id
  *         - nombre
+ *         - limite_credito
  *       properties:
  *         id:
  *           type: integer
@@ -37,6 +38,11 @@ const {
  *           type: string
  *           description: Nombre del nivel de suscripción
  *           example: "Black"
+ *         limite_credito:
+ *           type: number
+ *           format: decimal
+ *           description: Límite de crédito para este nivel de suscripción
+ *           example: 50000.00
  */
 
 /**
@@ -132,11 +138,17 @@ router.get("/:id", authenticate, getNivelSuscripcionPorId);
  *             type: object
  *             required:
  *               - nombre
+ *               - limite_credito
  *             properties:
  *               nombre:
  *                 type: string
  *                 description: Nombre del nivel de suscripción
  *                 example: "Platinum"
+ *               limite_credito:
+ *                 type: number
+ *                 format: decimal
+ *                 description: Límite de crédito para este nivel
+ *                 example: 100000.00
  *     responses:
  *       201:
  *         description: Nivel de suscripción creado exitosamente
@@ -189,11 +201,17 @@ router.post("/", authenticate, authorizeAdmin, crearNivelSuscripcion);
  *             type: object
  *             required:
  *               - nombre
+ *               - limite_credito
  *             properties:
  *               nombre:
  *                 type: string
  *                 description: Nuevo nombre del nivel de suscripción
  *                 example: "Gold Premium"
+ *               limite_credito:
+ *                 type: number
+ *                 format: decimal
+ *                 description: Nuevo límite de crédito
+ *                 example: 75000.00
  *     responses:
  *       200:
  *         description: Nivel de suscripción actualizado exitosamente

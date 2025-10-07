@@ -11,7 +11,7 @@ const {
 const getNivelesSuscripcion = async (req, res) => {
   try {
     const [rows] = await promisePool.execute(
-      `SELECT id_nivel, nombre FROM NivelSuscripcion ORDER BY nombre`
+      `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion ORDER BY nombre`
     );
 
     res.json({
@@ -37,7 +37,7 @@ const getNivelSuscripcionPorId = async (req, res) => {
     const { id } = req.params;
 
     const [rows] = await promisePool.execute(
-      `SELECT id_nivel, nombre FROM NivelSuscripcion WHERE id_nivel = ?`,
+      `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion WHERE id_nivel = ?`,
       [id]
     );
 
@@ -68,13 +68,20 @@ const getNivelSuscripcionPorId = async (req, res) => {
  */
 const crearNivelSuscripcion = async (req, res) => {
   try {
-    const { nombre } = req.body;
+    const { nombre, limite_credito } = req.body;
 
     // Validaciones
     if (!nombre || nombre.trim() === "") {
       return res.status(400).json({
         success: false,
         message: "El nombre del nivel de suscripción es requerido",
+      });
+    }
+
+    if (!limite_credito || limite_credito <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El límite de crédito debe ser mayor a 0",
       });
     }
 
@@ -91,16 +98,19 @@ const crearNivelSuscripcion = async (req, res) => {
       });
     }
 
-    const nivelData = mapNivelSuscripcionToDB({ nombre: nombre.trim() });
+    const nivelData = mapNivelSuscripcionToDB({ 
+      nombre: nombre.trim(),
+      limite_credito: parseFloat(limite_credito)
+    });
 
     const [result] = await promisePool.execute(
-      `INSERT INTO NivelSuscripcion (nombre) VALUES (?)`,
-      [nivelData.nombre]
+      `INSERT INTO NivelSuscripcion (nombre, limite_credito) VALUES (?, ?)`,
+      [nivelData.nombre, nivelData.limite_credito]
     );
 
     // Obtener el nivel creado
     const [nuevoNivel] = await promisePool.execute(
-      `SELECT id_nivel, nombre FROM NivelSuscripcion WHERE id_nivel = ?`,
+      `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion WHERE id_nivel = ?`,
       [result.insertId]
     );
 
@@ -125,7 +135,7 @@ const crearNivelSuscripcion = async (req, res) => {
 const actualizarNivelSuscripcion = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre } = req.body;
+    const { nombre, limite_credito } = req.body;
 
     // Verificar que el nivel existe
     const [nivelExiste] = await promisePool.execute(
@@ -148,6 +158,13 @@ const actualizarNivelSuscripcion = async (req, res) => {
       });
     }
 
+    if (!limite_credito || limite_credito <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "El límite de crédito debe ser mayor a 0",
+      });
+    }
+
     // Verificar si ya existe otro nivel con ese nombre
     const [existente] = await promisePool.execute(
       `SELECT id_nivel FROM NivelSuscripcion WHERE nombre = ? AND id_nivel != ?`,
@@ -162,13 +179,13 @@ const actualizarNivelSuscripcion = async (req, res) => {
     }
 
     await promisePool.execute(
-      `UPDATE NivelSuscripcion SET nombre = ? WHERE id_nivel = ?`,
-      [nombre.trim(), id]
+      `UPDATE NivelSuscripcion SET nombre = ?, limite_credito = ? WHERE id_nivel = ?`,
+      [nombre.trim(), parseFloat(limite_credito), id]
     );
 
     // Obtener el nivel actualizado
     const [nivelActualizado] = await promisePool.execute(
-      `SELECT id_nivel, nombre FROM NivelSuscripcion WHERE id_nivel = ?`,
+      `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion WHERE id_nivel = ?`,
       [id]
     );
 
