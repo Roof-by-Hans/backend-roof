@@ -75,16 +75,25 @@ const {
  *       properties:
  *         idTipoSuscripcion:
  *           type: integer
- *           description: ID del tipo de suscripción (1=PREPAGA, 2=CREDITO)
+ *           description: |
+ *             ID del tipo de suscripción:
+ *             - 1 = PREPAGA (pre pago y punto, NO tienen nivel de suscripción)
+ *             - 2 = CREDITO (DEBEN tener nivel, jamás tienen saldo cargado, dependen del límite del nivel)
  *           example: 1
  *         idNivelSuscripcion:
  *           type: integer
- *           description: ID del nivel de suscripción (opcional)
+ *           description: |
+ *             ID del nivel de suscripción.
+ *             - REQUERIDO para tarjetas de CREDITO
+ *             - NO se usa para tarjetas PREPAGA
  *           example: 2
  *         saldoActual:
  *           type: number
  *           format: decimal
- *           description: Saldo inicial (opcional, por defecto 0.00)
+ *           description: |
+ *             Saldo inicial (opcional, por defecto 0.00).
+ *             Solo aplicable para tarjetas PREPAGA.
+ *             Las tarjetas CREDITO no tienen saldo.
  *           example: 1000.00
  *
  *     TarjetaUpdate:
@@ -267,6 +276,10 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *     description: |
  *       Registra una nueva tarjeta física en el sistema.
  *       El UUID se genera automáticamente (UUID v4) y es único para cada tarjeta.
+ *       
+ *       **Importante:**
+ *       - Las tarjetas PREPAGA NO tienen nivel de suscripción.
+ *       - Las tarjetas CREDITO DEBEN tener nivel y jamás tienen saldo cargado.
  *     tags: [Tarjetas]
  *     security:
  *       - bearerAuth: []
@@ -277,17 +290,21 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *           schema:
  *             $ref: '#/components/schemas/TarjetaInput'
  *           examples:
- *             ejemplo1:
- *               summary: Tarjeta PREPAGA con nivel Black
- *               value:
- *                 idTipoSuscripcion: 1
- *                 idNivelSuscripcion: 2
- *                 saldoActual: 1000.00
- *             ejemplo2:
- *               summary: Tarjeta CREDITO sin nivel específico
+ *             tarjetaCreditoConNivel:
+ *               summary: Tarjeta CREDITO con nivel específico
  *               value:
  *                 idTipoSuscripcion: 2
- *                 saldoActual: 0.00
+ *                 idNivelSuscripcion: 3
+ *             tarjetaPrepagaConSaldo:
+ *               summary: Tarjeta PREPAGA con saldo inicial
+ *               value:
+ *                 idTipoSuscripcion: 1
+ *                 saldoActual: 1000.00
+ *             tarjetaPrepagaSinSaldo:
+ *               summary: Tarjeta PREPAGA sin saldo inicial
+ *               value:
+ *                 idTipoSuscripcion: 1
+ *                 saldoActual: 0
  *     responses:
  *       201:
  *         description: Tarjeta creada exitosamente

@@ -3,13 +3,9 @@ const router = express.Router();
 const {
   getTiposSuscripcion,
   getTipoSuscripcionPorId,
-  crearTipoSuscripcion,
-  actualizarTipoSuscripcion,
-  eliminarTipoSuscripcion,
 } = require("../controllers/tipoSuscripcionController");
 const {
   authenticate,
-  authorizeAdmin,
 } = require("../middlewares/authMiddleware");
 
 /**
@@ -37,16 +33,6 @@ const {
  *           type: string
  *           enum: ['PREPAGA', 'CREDITO']
  *           description: Tipo de suscripción - PREPAGA (tarjeta prepaga) o CREDITO (tarjeta de crédito)
- *           example: "PREPAGA"
- *     TipoSuscripcionInput:
- *       type: object
- *       required:
- *         - nombre
- *       properties:
- *         nombre:
- *           type: string
- *           enum: ['PREPAGA', 'CREDITO']
- *           description: Tipo de suscripción a crear/actualizar
  *           example: "PREPAGA"
  */
 
@@ -125,179 +111,5 @@ router.get("/", authenticate, getTiposSuscripcion);
  *         description: Error interno del servidor
  */
 router.get("/:id", authenticate, getTipoSuscripcionPorId);
-
-/**
- * @swagger
- * /api/tipos-suscripcion:
- *   post:
- *     summary: Crear un nuevo tipo de suscripción
- *     description: |
- *       Crea un nuevo tipo de suscripción en el sistema. 
- *       Solo se permiten los valores: PREPAGA o CREDITO.
- *       Requiere permisos de administrador.
- *     tags: [TipoSuscripcion]
- *     security:
- *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/TipoSuscripcionInput'
- *     responses:
- *       201:
- *         description: Tipo de suscripción creado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/TipoSuscripcion'
- *                 message:
- *                   type: string
- *                   example: "Tipo de suscripción creado exitosamente"
- *       400:
- *         description: |
- *           Datos inválidos:
- *           - Tipo ya existe
- *           - El nombre debe ser 'PREPAGA' o 'CREDITO'
- *           - Campo nombre requerido
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "El tipo de suscripción debe ser uno de: PREPAGA, CREDITO"
- *       401:
- *         description: No autenticado
- *       403:
- *         description: Sin permisos
- *       500:
- *         description: Error interno del servidor
- */
-router.post("/", authenticate, authorizeAdmin, crearTipoSuscripcion);
-
-/**
- * @swagger
- * /api/tipos-suscripcion/{id}:
- *   put:
- *     summary: Actualizar un tipo de suscripción
- *     description: |
- *       Actualiza los datos de un tipo de suscripción existente. 
- *       Solo se permiten los valores: PREPAGA o CREDITO.
- *       Requiere permisos de administrador.
- *     tags: [TipoSuscripcion]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID del tipo de suscripción a actualizar
- *         example: 1
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/TipoSuscripcionInput'
- *     responses:
- *       200:
- *         description: Tipo de suscripción actualizado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 data:
- *                   $ref: '#/components/schemas/TipoSuscripcion'
- *                 message:
- *                   type: string
- *                   example: "Tipo de suscripción actualizado exitosamente"
- *       400:
- *         description: |
- *           Datos inválidos:
- *           - Otro tipo ya existe con ese nombre
- *           - El nombre debe ser 'PREPAGA' o 'CREDITO'
- *           - Campo nombre requerido
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "El tipo de suscripción debe ser uno de: PREPAGA, CREDITO"
- *       401:
- *         description: No autenticado
- *       403:
- *         description: Sin permisos
- *       404:
- *         description: Tipo de suscripción no encontrado
- *       500:
- *         description: Error interno del servidor
- */
-router.put("/:id", authenticate, authorizeAdmin, actualizarTipoSuscripcion);
-
-/**
- * @swagger
- * /api/tipos-suscripcion/{id}:
- *   delete:
- *     summary: Eliminar un tipo de suscripción
- *     description: Elimina un tipo de suscripción del sistema. No se puede eliminar si hay tarjetas asociadas. Requiere permisos de administrador
- *     tags: [TipoSuscripcion]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID del tipo de suscripción a eliminar
- *         example: 1
- *     responses:
- *       200:
- *         description: Tipo de suscripción eliminado exitosamente
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Tipo de suscripción eliminado exitosamente"
- *       400:
- *         description: No se puede eliminar porque hay tarjetas asociadas
- *       401:
- *         description: No autenticado
- *       403:
- *         description: Sin permisos
- *       404:
- *         description: Tipo de suscripción no encontrado
- *       500:
- *         description: Error interno del servidor
- */
-router.delete("/:id", authenticate, authorizeAdmin, eliminarTipoSuscripcion);
 
 module.exports = router;

@@ -34,6 +34,9 @@ app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/clientes", clienteRoutes);
 app.use("/api/categorias-producto", categoriaProductoRoutes);
 app.use("/api/productos", productoRoutes);
+app.use("/api/tarjetas", tarjetaRoutes);
+app.use("/api/tipos-suscripcion", tipoSuscripcionRoutes);
+app.use("/api/niveles-suscripcion", nivelSuscripcionRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
