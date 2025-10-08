@@ -5,10 +5,11 @@ const swaggerUi = require("swagger-ui-express");
 const { swaggerSpec } = require("./config/swagger");
 const { testConnection } = require("./config/database");
 const authRoutes = require("./routes/authRoutes");
+const authClienteRoutes = require("./routes/authClienteRoutes");
+const clienteRoutes = require("./routes/clienteRoutes");
 const usuarioRoutes = require("./routes/usuarioRoutes");
 const categoriaProductoRoutes = require("./routes/categoriaProductoRoutes");
 const productoRoutes = require("./routes/productoRoutes");
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -24,8 +25,10 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/auth-cliente", authClienteRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/clientes", clienteRoutes);
 app.use("/api/categorias-producto", categoriaProductoRoutes);
 app.use("/api/productos", productoRoutes);
 
