@@ -7,6 +7,7 @@ const {
   actualizarTarjeta,
   eliminarTarjeta,
   actualizarSaldo,
+  regenerarUUID,
 } = require("../controllers/tarjetaController");
 const {
   authenticate,
@@ -70,13 +71,8 @@ const {
  *     TarjetaInput:
  *       type: object
  *       required:
- *         - uuid
  *         - idTipoSuscripcion
  *       properties:
- *         uuid:
- *           type: string
- *           description: UUID único de la tarjeta física (debe ser único)
- *           example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
  *         idTipoSuscripcion:
  *           type: integer
  *           description: ID del tipo de suscripción (1=PREPAGA, 2=CREDITO)
@@ -270,7 +266,7 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *     summary: Crear una nueva tarjeta
  *     description: |
  *       Registra una nueva tarjeta física en el sistema.
- *       El UUID debe obtenerse de la tarjeta física y debe ser único.
+ *       El UUID se genera automáticamente (UUID v4) y es único para cada tarjeta.
  *     tags: [Tarjetas]
  *     security:
  *       - bearerAuth: []
@@ -284,14 +280,12 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *             ejemplo1:
  *               summary: Tarjeta PREPAGA con nivel Black
  *               value:
- *                 uuid: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
  *                 idTipoSuscripcion: 1
  *                 idNivelSuscripcion: 2
  *                 saldoActual: 1000.00
  *             ejemplo2:
  *               summary: Tarjeta CREDITO sin nivel específico
  *               value:
- *                 uuid: "b2c3d4e5-f6g7-8901-bcde-f23456789012"
  *                 idTipoSuscripcion: 2
  *                 saldoActual: 0.00
  *     responses:
@@ -313,10 +307,8 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *       400:
  *         description: |
  *           Datos inválidos:
- *           - UUID requerido
- *           - UUID vacío o inválido
- *           - Saldo inválido (debe ser >= 0)
  *           - Tipo de suscripción requerido
+ *           - Saldo inválido (debe ser >= 0)
  *         content:
  *           application/json:
  *             schema:
@@ -327,26 +319,14 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "El UUID de la tarjeta física es requerido"
+ *                   example: "El tipo de suscripción es requerido"
  *       401:
  *         description: No autenticado
  *       403:
  *         description: Sin permisos (requiere rol admin)
  *       404:
  *         description: Tipo o nivel de suscripción no encontrado
- *       409:
- *         description: UUID ya registrado
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Ya existe una tarjeta registrada con ese UUID"
+
  *       500:
  *         description: Error interno del servidor
  *         content:
@@ -363,7 +343,7 @@ router.post("/", authenticate, authorizeAdmin, crearTarjeta);
  *     summary: Actualizar una tarjeta
  *     description: |
  *       Actualiza los datos de una tarjeta existente.
- *       Nota: El UUID no se puede modificar ya que corresponde a la tarjeta física.
+ *       Nota: Para modificar el UUID utilice el endpoint específico regenerar-uuid.
  *     tags: [Tarjetas]
  *     security:
  *       - bearerAuth: []
@@ -431,12 +411,7 @@ router.post("/", authenticate, authorizeAdmin, crearTarjeta);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
- *       409:
- *         description: Número de tarjeta duplicado
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
+
  *       500:
  *         description: Error interno del servidor
  *         content:
@@ -586,5 +561,68 @@ router.patch("/:id/saldo", authenticate, authorizeAdmin, actualizarSaldo);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.delete("/:id", authenticate, authorizeAdmin, eliminarTarjeta);
+
+/**
+ * @swagger
+ * /api/tarjetas/{id}/regenerar-uuid:
+ *   patch:
+ *     summary: Regenerar UUID de una tarjeta
+ *     description: |
+ *       Genera un nuevo UUID v4 para una tarjeta existente.
+ *       Esta función está destinada para casos especiales de mantenimiento.
+ *       ⚠️ PRECAUCIÓN: Al cambiar el UUID, la tarjeta física anterior quedará desvinculada.
+ *     tags: [Tarjetas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la tarjeta en la base de datos
+ *         example: 1
+ *     responses:
+ *       200:
+ *         description: UUID regenerado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Tarjeta'
+ *                 message:
+ *                   type: string
+ *                   example: "UUID regenerado exitosamente"
+ *       401:
+ *         description: No autenticado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Sin permisos (requiere rol admin)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       404:
+ *         description: Tarjeta no encontrada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.patch("/:id/regenerar-uuid", authenticate, authorizeAdmin, regenerarUUID);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const { promisePool } = require("../config/database");
 const { mapTarjetaRow, mapTarjetasRows } = require("../helpers/tarjetaMapper");
+const { v4: uuidv4 } = require('uuid');
 
 /**
  * Obtener todas las tarjetas
@@ -88,37 +89,19 @@ const getTarjetaPorId = async (req, res) => {
 const crearTarjeta = async (req, res) => {
   try {
     const {
-      uuid,
       idTipoSuscripcion,
       idNivelSuscripcion,
       saldoActual,
     } = req.body;
 
-    // Validaciones
-    if (!uuid || uuid.trim() === "") {
-      return res.status(400).json({
-        success: false,
-        message: "El UUID de la tarjeta física es requerido",
-      });
-    }
+    // Generar UUID v4 automáticamente para la tarjeta física
+    // Este UUID será único e irrepetible para cada tarjeta
+    const uuid = uuidv4();
 
     if (!idTipoSuscripcion) {
       return res.status(400).json({
         success: false,
         message: "El tipo de suscripción es requerido",
-      });
-    }
-
-    // Verificar que no exista una tarjeta con el mismo UUID
-    const [existente] = await promisePool.execute(
-      `SELECT id_tarjeta FROM Tarjeta WHERE uuid = ?`,
-      [uuid.trim()]
-    );
-
-    if (existente.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Ya existe una tarjeta registrada con ese UUID",
       });
     }
 
@@ -163,7 +146,7 @@ const crearTarjeta = async (req, res) => {
     const [result] = await promisePool.execute(
       `INSERT INTO Tarjeta (uuid, id_tipo_suscripcion, id_nivel_suscripcion, saldo_actual)
        VALUES (?, ?, ?, ?)`,
-      [uuid.trim(), idTipoSuscripcion, idNivelSuscripcion || null, saldoFinal]
+      [uuid, idTipoSuscripcion, idNivelSuscripcion || null, saldoFinal]
     );
 
     const [nuevaTarjeta] = await promisePool.execute(
@@ -442,6 +425,68 @@ const actualizarSaldo = async (req, res) => {
   }
 };
 
+/**
+ * Regenerar UUID de una tarjeta (función de utilidad)
+ * Solo para casos especiales de mantenimiento
+ */
+const regenerarUUID = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar que la tarjeta existe
+    const [tarjetaRows] = await promisePool.execute(
+      `SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ?`,
+      [id]
+    );
+
+    if (tarjetaRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Tarjeta no encontrada",
+      });
+    }
+
+    // Generar nuevo UUID
+    const nuevoUuid = uuidv4();
+
+    // Actualizar la tarjeta con el nuevo UUID
+    await promisePool.execute(
+      `UPDATE Tarjeta SET uuid = ? WHERE id_tarjeta = ?`,
+      [nuevoUuid, id]
+    );
+
+    // Obtener la tarjeta actualizada
+    const [tarjetaActualizada] = await promisePool.execute(
+      `SELECT t.id_tarjeta,
+        t.uuid,
+        t.id_tipo_suscripcion,
+        ts.nombre AS nombre_tipo_suscripcion,
+        t.id_nivel_suscripcion,
+        ns.nombre AS nombre_nivel_suscripcion,
+        ns.limite_credito AS limite_credito_nivel,
+        t.saldo_actual
+       FROM Tarjeta t
+       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+       WHERE t.id_tarjeta = ?`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      data: mapTarjetaRow(tarjetaActualizada[0]),
+      message: "UUID regenerado exitosamente",
+    });
+  } catch (error) {
+    console.error("Error al regenerar UUID:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getTarjetas,
   getTarjetaPorId,
@@ -449,4 +494,5 @@ module.exports = {
   actualizarTarjeta,
   eliminarTarjeta,
   actualizarSaldo,
+  regenerarUUID,
 };
