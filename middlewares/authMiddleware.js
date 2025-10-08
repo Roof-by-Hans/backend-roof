@@ -17,6 +17,15 @@ const authenticate = async (req, res, next) => {
     }
 
     const decoded = verifyToken(token);
+
+    // Verificar que el token no sea de un cliente
+    if (decoded.tipo === "cliente") {
+      return res.status(403).json({
+        success: false,
+        message: "Acceso denegado. Este endpoint es exclusivo para usuarios del sistema",
+      });
+    }
+
     const [rows] = await promisePool.execute(
       `SELECT id_usuario, nombre_usuario, activo
        FROM Usuario

@@ -6,6 +6,7 @@ const { swaggerSpec } = require("./config/swagger");
 const { testConnection } = require("./config/database");
 const usuarioRoutes = require("./routes/usuarioRoutes");
 const authRoutes = require("./routes/authRoutes");
+const authClienteRoutes = require("./routes/authClienteRoutes");
 const clienteRoutes = require("./routes/clienteRoutes");
 
 const app = express();
@@ -23,6 +24,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/auth-cliente", authClienteRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/clientes", clienteRoutes);
