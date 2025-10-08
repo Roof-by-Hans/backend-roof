@@ -10,7 +10,6 @@ const clienteRoutes = require("./routes/clienteRoutes");
 const usuarioRoutes = require("./routes/usuarioRoutes");
 const categoriaProductoRoutes = require("./routes/categoriaProductoRoutes");
 const productoRoutes = require("./routes/productoRoutes");
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
