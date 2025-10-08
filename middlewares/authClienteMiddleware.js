@@ -1,4 +1,4 @@
-const jwt = require("jsonwebtoken");
+const { verifyToken } = require("../helpers/jwt");
 
 const authClienteMiddleware = (req, res, next) => {
   try {
@@ -20,7 +20,7 @@ const authClienteMiddleware = (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = verifyToken(token);
 
     // Verificar que el token sea de un cliente
     if (decoded.tipo !== "cliente") {

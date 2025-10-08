@@ -79,8 +79,7 @@ const loginCliente = async (req, res) => {
     console.error("Error en loginCliente:", error);
     res.status(500).json({
       success: false,
-      message: "Error interno del servidor",
-      error: error.message,
+      message: "Error interno del servidor"
     });
   }
 };
