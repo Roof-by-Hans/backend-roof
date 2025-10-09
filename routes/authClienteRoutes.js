@@ -61,9 +61,49 @@ const router = express.Router();
  *                     token:
  *                       type: string
  *                       description: Token JWT para autenticación
+ *                       example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
  *                     cliente:
  *                       type: object
- *                       description: Información del cliente
+ *                       description: Información del cliente autenticado
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                           example: 1
+ *                         nombre:
+ *                           type: string
+ *                           example: "Juan"
+ *                         apellido:
+ *                           type: string
+ *                           example: "Pérez"
+ *                         email:
+ *                           type: string
+ *                           example: "juan.perez@example.com"
+ *                         telefono:
+ *                           type: string
+ *                           example: "+54 11 1234-5678"
+ *                           nullable: true
+ *                         idTarjeta:
+ *                           type: integer
+ *                           example: 5
+ *                           nullable: true
+ *                         fotoPerfil:
+ *                           type: string
+ *                           example: "https://example.com/fotos/juan-perez.jpg"
+ *                           nullable: true
+ *                         preferencias:
+ *                           type: string
+ *                           example: "Tema oscuro, notificaciones activadas"
+ *                           nullable: true
+ *                         tarjeta:
+ *                           type: object
+ *                           nullable: true
+ *                           properties:
+ *                             id:
+ *                               type: integer
+ *                               example: 5
+ *                             uuid:
+ *                               type: string
+ *                               example: "550e8400-e29b-41d4-a716-446655440000"
  *       400:
  *         description: Campos obligatorios faltantes
  *         content:

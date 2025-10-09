@@ -23,6 +23,8 @@ const getClientes = async (req, res) => {
         c.telefono,
         c.email,
         c.id_tarjeta,
+        c.foto_perfil,
+        c.preferencias,
         t.uuid AS tarjeta_uuid
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
@@ -58,6 +60,8 @@ const getClientePorId = async (req, res) => {
         c.telefono,
         c.email,
         c.id_tarjeta,
+        c.foto_perfil,
+        c.preferencias,
         t.uuid AS tarjeta_uuid
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
@@ -92,7 +96,7 @@ const getClientePorId = async (req, res) => {
  */
 const crearCliente = async (req, res) => {
   try {
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta } =
+    const { nombre, apellido, telefono, email, contrasena, idTarjeta, fotoPerfil, preferencias } =
       req.body;
 
     // Validaciones básicas
@@ -157,9 +161,9 @@ const crearCliente = async (req, res) => {
     const hashedPassword = await hashPassword(contrasena);
 
     const [result] = await promisePool.execute(
-      `INSERT INTO Cliente (nombre, apellido, telefono, email, contrasena, id_tarjeta)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [nombre, apellido, telefono || null, email, hashedPassword, idTarjeta || null]
+      `INSERT INTO Cliente (nombre, apellido, telefono, email, contrasena, id_tarjeta, foto_perfil, preferencias)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [nombre, apellido, telefono || null, email, hashedPassword, idTarjeta || null, fotoPerfil || null, preferencias || null]
     );
 
     const nuevoCliente = mapClienteRow({
@@ -169,6 +173,8 @@ const crearCliente = async (req, res) => {
       telefono: telefono || null,
       email,
       id_tarjeta: idTarjeta || null,
+      foto_perfil: fotoPerfil || null,
+      preferencias: preferencias || null,
     });
 
     res.status(201).json({
@@ -200,7 +206,7 @@ const crearCliente = async (req, res) => {
 const actualizarCliente = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta } =
+    const { nombre, apellido, telefono, email, contrasena, idTarjeta, fotoPerfil, preferencias } =
       req.body;
 
     const campos = [];
@@ -289,6 +295,16 @@ const actualizarCliente = async (req, res) => {
       valores.push(idTarjeta);
     }
 
+    if (fotoPerfil !== undefined) {
+      campos.push("foto_perfil = ?");
+      valores.push(fotoPerfil || null);
+    }
+
+    if (preferencias !== undefined) {
+      campos.push("preferencias = ?");
+      valores.push(preferencias || null);
+    }
+
     if (campos.length === 0) {
       return res.status(400).json({
         success: false,
@@ -317,6 +333,8 @@ const actualizarCliente = async (req, res) => {
         c.telefono,
         c.email,
         c.id_tarjeta,
+        c.foto_perfil,
+        c.preferencias,
         t.uuid AS tarjeta_uuid
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta

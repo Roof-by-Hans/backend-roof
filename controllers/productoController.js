@@ -55,6 +55,8 @@ const obtenerProductoPorId = async (id) => {
             p.nombre,
             p.precio_unitario,
             p.id_categoria,
+            p.foto_principal,
+            p.descripcion,
             c.nombre AS nombre_categoria
        FROM Producto p
        INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
@@ -72,6 +74,8 @@ const getProductos = async (req, res) => {
               p.nombre,
               p.precio_unitario,
               p.id_categoria,
+              p.foto_principal,
+              p.descripcion,
               c.nombre AS nombre_categoria
          FROM Producto p
          INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
@@ -133,6 +137,8 @@ const crearProducto = async (req, res) => {
     const nombre = normalizeNombre(req.body?.nombre);
     let precioUnitario;
     let idCategoria;
+    const fotoPrincipal = req.body?.fotoPrincipal ?? req.body?.foto_principal ?? null;
+    const descripcion = req.body?.descripcion ?? null;
 
     try {
       precioUnitario = parsePrecio(
@@ -187,9 +193,9 @@ const crearProducto = async (req, res) => {
     }
 
     const [result] = await promisePool.execute(
-      `INSERT INTO Producto (nombre, precio_unitario, id_categoria)
-       VALUES (?, ?, ?)`,
-      [nombre, precioUnitario, idCategoria]
+      `INSERT INTO Producto (nombre, precio_unitario, id_categoria, foto_principal, descripcion)
+       VALUES (?, ?, ?, ?, ?)`,
+      [nombre, precioUnitario, idCategoria, fotoPrincipal, descripcion]
     );
 
     const productoCreado = await obtenerProductoPorId(result.insertId);
@@ -295,6 +301,20 @@ const actualizarProducto = async (req, res) => {
 
       campos.push("id_categoria = ?");
       valores.push(nuevaCategoria);
+    }
+
+    if (
+      req.body?.fotoPrincipal !== undefined ||
+      req.body?.foto_principal !== undefined
+    ) {
+      const fotoPrincipal = req.body?.fotoPrincipal ?? req.body?.foto_principal ?? null;
+      campos.push("foto_principal = ?");
+      valores.push(fotoPrincipal);
+    }
+
+    if (req.body?.descripcion !== undefined) {
+      campos.push("descripcion = ?");
+      valores.push(req.body.descripcion || null);
     }
 
     if (campos.length === 0) {
