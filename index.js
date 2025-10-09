@@ -9,6 +9,9 @@ const authClienteRoutes = require("./routes/authClienteRoutes");
 const clienteRoutes = require("./routes/clienteRoutes");
 const usuarioRoutes = require("./routes/usuarioRoutes");
 const categoriaProductoRoutes = require("./routes/categoriaProductoRoutes");
+const tarjetaRoutes = require("./routes/tarjetaRoutes");
+const tipoSuscripcionRoutes = require("./routes/tipoSuscripcionRoutes");
+const nivelSuscripcionRoutes = require("./routes/nivelSuscripcionRoutes");
 const productoRoutes = require("./routes/productoRoutes");
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +34,9 @@ app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/clientes", clienteRoutes);
 app.use("/api/categorias-producto", categoriaProductoRoutes);
 app.use("/api/productos", productoRoutes);
+app.use("/api/tarjetas", tarjetaRoutes);
+app.use("/api/tipos-suscripcion", tipoSuscripcionRoutes);
+app.use("/api/niveles-suscripcion", nivelSuscripcionRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
