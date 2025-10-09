@@ -13,6 +13,8 @@ const mapClienteRow = (row) => {
     telefono: row.telefono || null,
     email: row.email || null,
     idTarjeta: row.id_tarjeta || null,
+    fotoPerfil: row.foto_perfil || null,
+    preferencias: row.preferencias || null,
     // Si hay información de tarjeta relacionada
     ...(row.tarjeta_uuid && {
       tarjeta: {

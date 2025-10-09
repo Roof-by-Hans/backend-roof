@@ -21,6 +21,8 @@ const mapProductoRow = (row = {}) => {
     nombre: normalizeNombre(row.nombre),
     precioUnitario: precio,
     idCategoria,
+    fotoPrincipal: row.foto_principal ?? row.fotoPrincipal ?? null,
+    descripcion: row.descripcion ?? null,
     categoria:
       nombreCategoria !== null && nombreCategoria !== undefined
         ? {

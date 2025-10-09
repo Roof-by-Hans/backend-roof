@@ -46,6 +46,16 @@ const router = express.Router();
  *           type: integer
  *           description: Identificador de la categoría asociada
  *           example: 5
+ *         fotoPrincipal:
+ *           type: string
+ *           description: URL de la foto principal del producto
+ *           example: "https://example.com/productos/whisky-macallan.jpg"
+ *           nullable: true
+ *         descripcion:
+ *           type: string
+ *           description: Descripción detallada del producto
+ *           example: "Whisky escocés de malta única, envejecido durante 18 años en barricas de roble europeo. Notas de frutas secas, especias y vainilla."
+ *           nullable: true
  *         categoria:
  *           type: object
  *           nullable: true
@@ -88,6 +98,14 @@ const router = express.Router();
  *               idCategoria:
  *                 type: integer
  *                 example: 5
+ *               fotoPrincipal:
+ *                 type: string
+ *                 description: URL de la foto principal del producto (opcional)
+ *                 example: "https://example.com/productos/lagavulin-16.jpg"
+ *               descripcion:
+ *                 type: string
+ *                 description: Descripción detallada del producto (opcional)
+ *                 example: "Whisky escocés de Islay con intenso sabor ahumado y notas marinas"
  *           examples:
  *             whiskyPremium:
  *               summary: Registrar un whisky de etiqueta premium
@@ -95,12 +113,16 @@ const router = express.Router();
  *                 nombre: "Whisky Glenfiddich Gran Reserva"
  *                 precioUnitario: 245.5
  *                 idCategoria: 5
+ *                 fotoPrincipal: "https://example.com/productos/glenfiddich.jpg"
+ *                 descripcion: "Whisky escocés de malta única con 18 años de maduración. Aromas florales y notas de roble."
  *             habanoSeleccion:
  *               summary: Registrar un habano como producto unitario
  *               value:
  *                 nombre: "Habano Cohiba Sublimes Edición Limitada"
  *                 precioUnitario: 58.75
  *                 idCategoria: 12
+ *                 fotoPrincipal: "https://example.com/productos/cohiba-sublime.jpg"
+ *                 descripcion: "Habano cubano premium con capa especial y mezcla exclusiva de tabacos selectos."
  *     ActualizarProducto:
  *       description: Campos opcionales para actualizar un producto existente
  *       required: true
@@ -119,6 +141,14 @@ const router = express.Router();
  *               idCategoria:
  *                 type: integer
  *                 example: 7
+ *               fotoPrincipal:
+ *                 type: string
+ *                 example: "https://example.com/productos/lagavulin-edicion-especial.jpg"
+ *                 nullable: true
+ *               descripcion:
+ *                 type: string
+ *                 example: "Edición especial con caja de madera y botella numerada. Sabor intenso y complejo."
+ *                 nullable: true
  */
 
 /**

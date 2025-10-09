@@ -58,6 +58,16 @@ const {
  *           description: ID de la tarjeta asociada al cliente
  *           example: 5
  *           nullable: true
+ *         fotoPerfil:
+ *           type: string
+ *           description: URL de la foto de perfil del cliente
+ *           example: "https://example.com/fotos/juan-perez.jpg"
+ *           nullable: true
+ *         preferencias:
+ *           type: string
+ *           description: Preferencias del usuario almacenadas como texto
+ *           example: "Tema oscuro, notificaciones activadas, idioma español"
+ *           nullable: true
  *         tarjeta:
  *           type: object
  *           description: Información de la tarjeta asociada (si existe)
@@ -133,6 +143,14 @@ const {
  *           type: integer
  *           description: ID de la tarjeta a asociar (opcional)
  *           example: 5
+ *         fotoPerfil:
+ *           type: string
+ *           description: URL de la foto de perfil del cliente (opcional)
+ *           example: "https://example.com/fotos/juan-perez.jpg"
+ *         preferencias:
+ *           type: string
+ *           description: Preferencias del usuario almacenadas como texto (opcional)
+ *           example: "Tema oscuro, notificaciones activadas"
  *     ActualizarClienteRequest:
  *       type: object
  *       description: Campos opcionales a actualizar; se puede enviar uno o varios
@@ -156,6 +174,14 @@ const {
  *         idTarjeta:
  *           type: integer
  *           example: 10
+ *           nullable: true
+ *         fotoPerfil:
+ *           type: string
+ *           example: "https://example.com/fotos/nueva-foto.jpg"
+ *           nullable: true
+ *         preferencias:
+ *           type: string
+ *           example: "Tema claro, notificaciones desactivadas, idioma inglés"
  *           nullable: true
  */
 
@@ -250,6 +276,8 @@ router.get("/:id", authenticate, authorizeAdmin, getClientePorId);
  *                 email: maria.garcia@example.com
  *                 contrasena: MiContrasenaSegura123
  *                 idTarjeta: 5
+ *                 fotoPerfil: "https://example.com/fotos/maria-garcia.jpg"
+ *                 preferencias: "Tema oscuro, notificaciones activadas, idioma español"
  *     responses:
  *       201:
  *         description: Cliente creado correctamente
@@ -321,6 +349,14 @@ router.post("/", authenticate, authorizeAdmin, crearCliente);
  *               summary: Cambiar contraseña
  *               value:
  *                 contrasena: NuevaContrasenaSegura456
+ *             actualizarFotoPerfil:
+ *               summary: Actualizar foto de perfil
+ *               value:
+ *                 fotoPerfil: "https://example.com/fotos/nueva-foto.jpg"
+ *             actualizarPreferencias:
+ *               summary: Actualizar preferencias de usuario
+ *               value:
+ *                 preferencias: "Tema claro, notificaciones por email, idioma inglés"
  *             desasociarTarjeta:
  *               summary: Quitar tarjeta asociada
  *               value:

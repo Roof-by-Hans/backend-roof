@@ -22,6 +22,8 @@ const loginCliente = async (req, res) => {
               c.email, 
               c.contrasena,
               c.id_tarjeta,
+              c.foto_perfil,
+              c.preferencias,
               t.uuid AS tarjeta_uuid
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
