@@ -15,6 +15,8 @@ const nivelSuscripcionRoutes = require("./routes/nivelSuscripcionRoutes");
 const productoRoutes = require("./routes/productoRoutes");
 const mesaGrupoRoutes = require("./routes/mesaGrupoRoutes");
 const mesaRoutes = require("./routes/mesaRoutes");
+const rfidRoutes = require("./routes/rfidRoutes");
+const { rfidService } = require("./hardware/rfidService");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -41,6 +43,7 @@ app.use("/api/tipos-suscripcion", tipoSuscripcionRoutes);
 app.use("/api/niveles-suscripcion", nivelSuscripcionRoutes);
 app.use("/api/mesas", mesaRoutes);
 app.use("/api/mesas-grupo", mesaGrupoRoutes);
+app.use("/api/rfid", rfidRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
@@ -70,6 +73,26 @@ app.listen(PORT, async () => {
     `📚 Documentación disponible en http://localhost:${PORT}/api-docs`
   );
   await testConnection();
+  // Intentar conectar lector RFID (no bloqueante)
+  try {
+    console.log("🔍 Inicializando servicio RFID...");
+    rfidService.on("ready", (info) =>
+      console.log(`🔌 RFID listo en ${info.path} @ ${info.baudRate} baud`)
+    );
+    rfidService.on("card", (uid) => console.log(`💳 UID detectado: ${uid}`));
+    rfidService.on("error", (err) =>
+      console.warn("❌ RFID error:", err.message)
+    );
+
+    const connected = await rfidService.connect();
+    if (connected) {
+      console.log("✅ Servicio RFID conectado exitosamente");
+    } else {
+      console.log("⚠️ Servicio RFID no pudo conectarse");
+    }
+  } catch (e) {
+    console.warn("❌ RFID no inicializado:", e.message);
+  }
 });
 
 module.exports = app;

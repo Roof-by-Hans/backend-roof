@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getTarjetas,
   getTarjetaPorId,
+  getTarjetaPorUUID,
   crearTarjeta,
   actualizarTarjeta,
   eliminarTarjeta,
@@ -72,7 +73,12 @@ const {
  *       type: object
  *       required:
  *         - idTipoSuscripcion
+ *         - uuid
  *       properties:
+ *         uuid:
+ *           type: string
+ *           description: UID físico leído desde el lector RFID (en mayúsculas). Se obtiene llamando a /api/rfid/scan
+ *           example: "A1B2C3D4"
  *         idTipoSuscripcion:
  *           type: integer
  *           description: |
@@ -206,7 +212,31 @@ const {
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get("/", authenticate, authorizeAdmin, getTarjetas);
+router.get("/", /*authenticate, authorizeAdmin,*/ getTarjetas);
+/**
+ * @swagger
+ * /api/tarjetas:
+ *   post:
+ *     summary: Crear (emitir) una nueva tarjeta física
+ *     tags: [Tarjetas]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TarjetaInput'
+ *     responses:
+ *       201:
+ *         description: Tarjeta creada exitosamente
+ *       400:
+ *         description: Error de validación
+ *       409:
+ *         description: UID ya registrado
+ */
+// router.post("/", authenticate, authorizeAdmin, crearTarjeta);
+router.post("/", crearTarjeta); // SIN AUTH PARA PRUEBAS
 
 /**
  * @swagger
@@ -266,7 +296,50 @@ router.get("/", authenticate, authorizeAdmin, getTarjetas);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
+router.get("/:id", /*authenticate, authorizeAdmin,*/ getTarjetaPorId);
+
+/**
+ * @swagger
+ * /api/tarjetas/uuid/{uuid}:
+ *   get:
+ *     summary: Obtener tarjeta por UUID
+ *     description: Obtiene la información completa de una tarjeta mediante su UUID (RFID)
+ *     tags: [Tarjetas]
+ *     parameters:
+ *       - in: path
+ *         name: uuid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: UUID de la tarjeta RFID
+ *     responses:
+ *       200:
+ *         description: Tarjeta encontrada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Tarjeta'
+ *                 message:
+ *                   type: string
+ *       404:
+ *         description: Tarjeta no encontrada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get("/uuid/:uuid", /*authenticate, authorizeAdmin,*/ getTarjetaPorUUID);
 
 /**
  * @swagger
@@ -351,7 +424,8 @@ router.get("/:id", authenticate, authorizeAdmin, getTarjetaPorId);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post("/", authenticate, authorizeAdmin, crearTarjeta);
+// router.post("/", authenticate, authorizeAdmin, crearTarjeta); // DUPLICADO
+// router.post("/", crearTarjeta); // YA ESTÁ DEFINIDO ARRIBA
 
 /**
  * @swagger
@@ -640,6 +714,11 @@ router.delete("/:id", authenticate, authorizeAdmin, eliminarTarjeta);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.patch("/:id/regenerar-uuid", authenticate, authorizeAdmin, regenerarUUID);
+router.patch(
+  "/:id/regenerar-uuid",
+  authenticate,
+  authorizeAdmin,
+  regenerarUUID
+);
 
 module.exports = router;

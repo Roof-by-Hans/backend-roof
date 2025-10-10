@@ -4,9 +4,7 @@ const {
   getTiposSuscripcion,
   getTipoSuscripcionPorId,
 } = require("../controllers/tipoSuscripcionController");
-const {
-  authenticate,
-} = require("../middlewares/authMiddleware");
+const { authenticate } = require("../middlewares/authMiddleware");
 
 /**
  * @swagger
@@ -68,7 +66,8 @@ const {
  *       500:
  *         description: Error interno del servidor
  */
-router.get("/", authenticate, getTiposSuscripcion);
+// router.get("/", authenticate, getTiposSuscripcion);
+router.get("/", getTiposSuscripcion); // SIN AUTH PARA PRUEBAS
 
 /**
  * @swagger

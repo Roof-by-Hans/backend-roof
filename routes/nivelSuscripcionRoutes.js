@@ -77,7 +77,8 @@ const {
  *       500:
  *         description: Error interno del servidor
  */
-router.get("/", authenticate, getNivelesSuscripcion);
+// router.get("/", authenticate, getNivelesSuscripcion);
+router.get("/", getNivelesSuscripcion); // SIN AUTH PARA PRUEBAS
 
 /**
  * @swagger

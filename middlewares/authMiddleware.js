@@ -3,6 +3,12 @@ const { verifyToken } = require("../helpers/jwt");
 const { obtenerRolesUsuario } = require("../helpers/rolHelper");
 
 const authenticate = async (req, res, next) => {
+  const isAuthDisabled = process.env.DISABLE_AUTH === "true";
+  if (isAuthDisabled) {
+    // Bypass para entorno de pruebas: usuario ficticio admin
+    req.user = { id: 0, nombreUsuario: "dev", roles: ["Administrador"] };
+    return next();
+  }
   try {
     const authHeader = req.headers["authorization"] || "";
     const token = authHeader.startsWith("Bearer ")
@@ -22,7 +28,8 @@ const authenticate = async (req, res, next) => {
     if (decoded.tipo === "cliente") {
       return res.status(403).json({
         success: false,
-        message: "Acceso denegado. Este endpoint es exclusivo para usuarios del sistema",
+        message:
+          "Acceso denegado. Este endpoint es exclusivo para usuarios del sistema",
       });
     }
 
@@ -77,6 +84,8 @@ const authenticate = async (req, res, next) => {
 };
 
 const authorizeAdmin = (req, res, next) => {
+  const isAuthDisabled = process.env.DISABLE_AUTH === "true";
+  if (isAuthDisabled) return next();
   const roles = req.user?.roles || [];
 
   if (!roles.includes("Administrador")) {
