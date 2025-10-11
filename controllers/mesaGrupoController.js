@@ -1,7 +1,6 @@
 const { promisePool } = require("../config/database");
 const {
   normalizeNombre,
-  mapMesaConGrupoRows,
   buildGrupoDetalle,
 } = require("../models/mesaGrupoModel");
 
@@ -37,23 +36,58 @@ const cargarGrupoDetalle = async (idGrupo, connection = promisePool) => {
   return buildGrupoDetalle(grupoRows[0], mesasRows);
 };
 
-const listarMesasConGrupo = async (req, res) => {
+const listarGruposConMesas = async (req, res) => {
   try {
-    const [rows] = await promisePool.execute(
-      `SELECT id_mesa, nombre_mesa, id_grupo, nombre_grupo
-         FROM vw_mesas_con_grupo
-        ORDER BY nombre_mesa`
+    const [gruposRows] = await promisePool.execute(
+      `SELECT id_grupo, nombre
+         FROM GrupoMesas
+        ORDER BY nombre`
     );
 
-    const mesas = mapMesaConGrupoRows(rows);
+    if (gruposRows.length === 0) {
+      return res.json({
+        success: true,
+        message: "Grupos obtenidos correctamente",
+        data: [],
+      });
+    }
+
+    const grupoIds = gruposRows.map((row) => row.id_grupo);
+    const placeholders = grupoIds.map(() => "?").join(", ");
+
+    const [mesasRows] = await promisePool.execute(
+      `SELECT mg.id_grupo, m.id_mesa, m.nombre
+         FROM MesaGrupo mg
+         INNER JOIN Mesa m ON m.id_mesa = mg.id_mesa
+        WHERE mg.id_grupo IN (${placeholders})
+        ORDER BY m.nombre`,
+      grupoIds
+    );
+
+    const mesasPorGrupo = mesasRows.reduce((acc, mesaRow) => {
+      const { id_grupo: idGrupo } = mesaRow;
+
+      if (!acc[idGrupo]) {
+        acc[idGrupo] = [];
+      }
+
+      acc[idGrupo].push(mesaRow);
+      return acc;
+    }, Object.create(null));
+
+    const grupos = gruposRows
+      .map((grupoRow) =>
+        buildGrupoDetalle(grupoRow, mesasPorGrupo[grupoRow.id_grupo] || [])
+      )
+      .filter((grupo) => grupo !== null);
 
     res.json({
       success: true,
-      message: "Mesas obtenidas correctamente",
-      data: mesas,
+      message: "Grupos obtenidos correctamente",
+      data: grupos,
     });
   } catch (error) {
-    console.error("Error al listar mesas con grupo:", error);
+    console.error("Error al listar grupos de mesas:", error);
     return respondError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
@@ -240,7 +274,7 @@ const disolverGrupo = async (req, res) => {
 };
 
 module.exports = {
-  listarMesasConGrupo,
+  listarGruposConMesas,
   crearGrupo,
   obtenerGrupo,
   disolverGrupo,

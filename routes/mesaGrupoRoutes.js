@@ -1,6 +1,6 @@
 const express = require("express");
 const {
-  listarMesasConGrupo,
+  listarGruposConMesas,
   crearGrupo,
   obtenerGrupo,
   disolverGrupo,
@@ -102,15 +102,15 @@ const router = express.Router();
 
 /**
  * @swagger
- * /api/mesas-grupo/mesas:
+ * /api/mesas-grupo/grupos:
  *   get:
- *     summary: Listar todas las mesas con su grupo asociado
+ *     summary: Listar todos los grupos de mesas con sus integrantes
  *     tags: [MesasGrupo]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Listado de mesas con información de agrupaciones
+ *         description: Grupos obtenidos correctamente
  *         content:
  *           application/json:
  *             schema:
@@ -121,17 +121,17 @@ const router = express.Router();
  *                   example: true
  *                 message:
  *                   type: string
- *                   example: Mesas obtenidas correctamente
+ *                   example: Grupos obtenidos correctamente
  *                 data:
  *                   type: array
  *                   items:
- *                     $ref: '#/components/schemas/MesaConGrupo'
+ *                     $ref: '#/components/schemas/GrupoMesasDetalle'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get("/mesas", authenticate, listarMesasConGrupo);
+router.get("/grupos", authenticate, listarGruposConMesas);
 
 /**
  * @swagger
