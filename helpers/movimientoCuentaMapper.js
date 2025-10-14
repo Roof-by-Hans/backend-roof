@@ -9,10 +9,14 @@ const mapMovimientoCuentaRow = (row) => {
   return {
     id: row.id_movimiento,
     idCliente: row.id_cliente,
+    idTarjeta: row.id_tarjeta || null,
     fecha: row.fecha,
     monto: parseFloat(row.monto),
     tipoMovimiento: row.tipo_movimiento,
+    idTipoMov: row.id_tipo_mov || null,
     idFactura: row.id_factura || null,
+    idMovCaja: row.id_mov_caja || null,
+    idUsuario: row.id_usuario || null,
     observaciones: row.observaciones || null,
     // Información adicional del cliente si está disponible
     ...(row.nombre_cliente && {
@@ -23,12 +27,34 @@ const mapMovimientoCuentaRow = (row) => {
         email: row.email_cliente,
       },
     }),
+    // Información adicional de la tarjeta si está disponible
+    ...(row.tarjeta_uuid && {
+      tarjeta: {
+        id: row.id_tarjeta,
+        uuid: row.tarjeta_uuid,
+        saldoActual: row.tarjeta_saldo ? parseFloat(row.tarjeta_saldo) : null,
+      },
+    }),
+    // Información adicional del tipo de movimiento si está disponible
+    ...(row.tipo_movimiento_nombre && {
+      tipoMovimientoDetalle: {
+        id: row.id_tipo_mov,
+        nombre: row.tipo_movimiento_nombre,
+      },
+    }),
     // Información adicional de la factura si está disponible
     ...(row.total_factura && {
       factura: {
         id: row.id_factura,
         total: parseFloat(row.total_factura),
         estado: row.estado_factura,
+      },
+    }),
+    // Información adicional del usuario si está disponible
+    ...(row.usuario_nombre && {
+      usuario: {
+        id: row.id_usuario,
+        nombreUsuario: row.usuario_nombre,
       },
     }),
   };

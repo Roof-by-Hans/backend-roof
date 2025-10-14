@@ -12,19 +12,30 @@ const getMovimientosCuenta = async (req, res) => {
     const [rows] = await promisePool.execute(
       `SELECT mc.id_movimiento,
               mc.id_cliente,
+              mc.id_tarjeta,
               mc.fecha,
               mc.monto,
               mc.tipo_movimiento,
+              mc.id_tipo_mov,
               mc.id_factura,
+              mc.id_mov_caja,
+              mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
               c.apellido AS apellido_cliente,
               c.email AS email_cliente,
+              t.uuid AS tarjeta_uuid,
+              t.saldo_actual AS tarjeta_saldo,
+              tm.nombre AS tipo_movimiento_nombre,
               f.total AS total_factura,
-              f.estado AS estado_factura
+              f.estado AS estado_factura,
+              u.nombre_usuario AS usuario_nombre
        FROM MovimientoCuenta mc
        INNER JOIN Cliente c ON c.id_cliente = mc.id_cliente
+       LEFT JOIN Tarjeta t ON t.id_tarjeta = mc.id_tarjeta
+       LEFT JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
        LEFT JOIN Factura f ON f.id_factura = mc.id_factura
+       LEFT JOIN Usuario u ON u.id_usuario = mc.id_usuario
        ORDER BY mc.fecha DESC`
     );
 
@@ -53,19 +64,30 @@ const getMovimientoCuentaPorId = async (req, res) => {
     const [rows] = await promisePool.execute(
       `SELECT mc.id_movimiento,
               mc.id_cliente,
+              mc.id_tarjeta,
               mc.fecha,
               mc.monto,
               mc.tipo_movimiento,
+              mc.id_tipo_mov,
               mc.id_factura,
+              mc.id_mov_caja,
+              mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
               c.apellido AS apellido_cliente,
               c.email AS email_cliente,
+              t.uuid AS tarjeta_uuid,
+              t.saldo_actual AS tarjeta_saldo,
+              tm.nombre AS tipo_movimiento_nombre,
               f.total AS total_factura,
-              f.estado AS estado_factura
+              f.estado AS estado_factura,
+              u.nombre_usuario AS usuario_nombre
        FROM MovimientoCuenta mc
        INNER JOIN Cliente c ON c.id_cliente = mc.id_cliente
+       LEFT JOIN Tarjeta t ON t.id_tarjeta = mc.id_tarjeta
+       LEFT JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
        LEFT JOIN Factura f ON f.id_factura = mc.id_factura
+       LEFT JOIN Usuario u ON u.id_usuario = mc.id_usuario
        WHERE mc.id_movimiento = ?`,
       [id]
     );
@@ -103,19 +125,30 @@ const getMovimientosPorCliente = async (req, res) => {
     let query = `
       SELECT mc.id_movimiento,
               mc.id_cliente,
+              mc.id_tarjeta,
               mc.fecha,
               mc.monto,
               mc.tipo_movimiento,
+              mc.id_tipo_mov,
               mc.id_factura,
+              mc.id_mov_caja,
+              mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
               c.apellido AS apellido_cliente,
               c.email AS email_cliente,
+              t.uuid AS tarjeta_uuid,
+              t.saldo_actual AS tarjeta_saldo,
+              tm.nombre AS tipo_movimiento_nombre,
               f.total AS total_factura,
-              f.estado AS estado_factura
+              f.estado AS estado_factura,
+              u.nombre_usuario AS usuario_nombre
        FROM MovimientoCuenta mc
        INNER JOIN Cliente c ON c.id_cliente = mc.id_cliente
+       LEFT JOIN Tarjeta t ON t.id_tarjeta = mc.id_tarjeta
+       LEFT JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
        LEFT JOIN Factura f ON f.id_factura = mc.id_factura
+       LEFT JOIN Usuario u ON u.id_usuario = mc.id_usuario
        WHERE mc.id_cliente = ?
     `;
 
@@ -196,12 +229,22 @@ const getResumenCuentaCliente = async (req, res) => {
     const [ultimosMovimientos] = await promisePool.execute(
       `SELECT mc.id_movimiento,
               mc.id_cliente,
+              mc.id_tarjeta,
               mc.fecha,
               mc.monto,
               mc.tipo_movimiento,
+              mc.id_tipo_mov,
               mc.id_factura,
-              mc.observaciones
+              mc.id_mov_caja,
+              mc.id_usuario,
+              mc.observaciones,
+              t.uuid AS tarjeta_uuid,
+              tm.nombre AS tipo_movimiento_nombre,
+              u.nombre_usuario AS usuario_nombre
        FROM MovimientoCuenta mc
+       LEFT JOIN Tarjeta t ON t.id_tarjeta = mc.id_tarjeta
+       LEFT JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
+       LEFT JOIN Usuario u ON u.id_usuario = mc.id_usuario
        WHERE mc.id_cliente = ?
        ORDER BY mc.fecha DESC
        LIMIT 10`,
@@ -241,9 +284,157 @@ const getResumenCuentaCliente = async (req, res) => {
   }
 };
 
+/**
+ * Obtener movimientos de cuenta por tarjeta
+ */
+const getMovimientosPorTarjeta = async (req, res) => {
+  try {
+    const { idTarjeta } = req.params;
+    const { tipo, desde, hasta } = req.query;
+
+    let query = `
+      SELECT mc.id_movimiento,
+              mc.id_cliente,
+              mc.id_tarjeta,
+              mc.fecha,
+              mc.monto,
+              mc.tipo_movimiento,
+              mc.id_tipo_mov,
+              mc.id_factura,
+              mc.id_mov_caja,
+              mc.id_usuario,
+              mc.observaciones,
+              c.nombre AS nombre_cliente,
+              c.apellido AS apellido_cliente,
+              c.email AS email_cliente,
+              t.uuid AS tarjeta_uuid,
+              t.saldo_actual AS tarjeta_saldo,
+              tm.nombre AS tipo_movimiento_nombre,
+              f.total AS total_factura,
+              f.estado AS estado_factura,
+              u.nombre_usuario AS usuario_nombre
+       FROM MovimientoCuenta mc
+       INNER JOIN Cliente c ON c.id_cliente = mc.id_cliente
+       INNER JOIN Tarjeta t ON t.id_tarjeta = mc.id_tarjeta
+       LEFT JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
+       LEFT JOIN Factura f ON f.id_factura = mc.id_factura
+       LEFT JOIN Usuario u ON u.id_usuario = mc.id_usuario
+       WHERE mc.id_tarjeta = ?
+    `;
+
+    const params = [idTarjeta];
+
+    // Filtrar por tipo de movimiento si se especifica
+    if (tipo && ["CONSUMO", "RECARGA", "PAGO"].includes(tipo.toUpperCase())) {
+      query += ` AND mc.tipo_movimiento = ?`;
+      params.push(tipo.toUpperCase());
+    }
+
+    // Filtrar por rango de fechas
+    if (desde) {
+      query += ` AND mc.fecha >= ?`;
+      params.push(desde);
+    }
+
+    if (hasta) {
+      query += ` AND mc.fecha <= ?`;
+      params.push(hasta);
+    }
+
+    query += ` ORDER BY mc.fecha DESC`;
+
+    const [rows] = await promisePool.execute(query, params);
+
+    res.json({
+      success: true,
+      data: mapMovimientoCuentaRows(rows),
+      message: "Movimientos de cuenta de la tarjeta obtenidos correctamente",
+    });
+  } catch (error) {
+    console.error("Error al obtener movimientos de la tarjeta:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Obtener movimientos de cuenta por tipo de movimiento
+ */
+const getMovimientosPorTipo = async (req, res) => {
+  try {
+    const { idTipoMov } = req.params;
+    const { desde, hasta } = req.query;
+
+    let query = `
+      SELECT mc.id_movimiento,
+              mc.id_cliente,
+              mc.id_tarjeta,
+              mc.fecha,
+              mc.monto,
+              mc.tipo_movimiento,
+              mc.id_tipo_mov,
+              mc.id_factura,
+              mc.id_mov_caja,
+              mc.id_usuario,
+              mc.observaciones,
+              c.nombre AS nombre_cliente,
+              c.apellido AS apellido_cliente,
+              c.email AS email_cliente,
+              t.uuid AS tarjeta_uuid,
+              t.saldo_actual AS tarjeta_saldo,
+              tm.nombre AS tipo_movimiento_nombre,
+              f.total AS total_factura,
+              f.estado AS estado_factura,
+              u.nombre_usuario AS usuario_nombre
+       FROM MovimientoCuenta mc
+       INNER JOIN Cliente c ON c.id_cliente = mc.id_cliente
+       INNER JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
+       LEFT JOIN Tarjeta t ON t.id_tarjeta = mc.id_tarjeta
+       LEFT JOIN Factura f ON f.id_factura = mc.id_factura
+       LEFT JOIN Usuario u ON u.id_usuario = mc.id_usuario
+       WHERE mc.id_tipo_mov = ?
+    `;
+
+    const params = [idTipoMov];
+
+    // Filtrar por rango de fechas
+    if (desde) {
+      query += ` AND mc.fecha >= ?`;
+      params.push(desde);
+    }
+
+    if (hasta) {
+      query += ` AND mc.fecha <= ?`;
+      params.push(hasta);
+    }
+
+    query += ` ORDER BY mc.fecha DESC`;
+
+    const [rows] = await promisePool.execute(query, params);
+
+    res.json({
+      success: true,
+      data: mapMovimientoCuentaRows(rows),
+      message: "Movimientos de cuenta por tipo obtenidos correctamente",
+    });
+  } catch (error) {
+    console.error("Error al obtener movimientos por tipo:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getMovimientosCuenta,
   getMovimientoCuentaPorId,
   getMovimientosPorCliente,
   getResumenCuentaCliente,
+  getMovimientosPorTarjeta,
+  getMovimientosPorTipo,
 };
