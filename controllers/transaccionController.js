@@ -193,10 +193,14 @@ const registrarConsumo = async (req, res) => {
     }
 
     // 6. Crear la factura
+    // Para tarjetas prepagas, el estado es COBRADA porque ya se descontó del saldo
+    // Para tarjetas de crédito, el estado es PENDIENTE hasta que se pague
+    const estadoFactura = cliente.tipo_suscripcion === "PREPAGA" ? "COBRADA" : "PENDIENTE";
+    
     const [facturaResult] = await connection.execute(
       `INSERT INTO Factura (id_cliente, id_mesa, id_grupo, fecha, estado, total)
-       VALUES (?, ?, ?, NOW(), 'PENDIENTE', ?)`,
-      [idCliente, idMesa || null, idGrupo || null, total]
+       VALUES (?, ?, ?, NOW(), ?, ?)`,
+      [idCliente, idMesa || null, idGrupo || null, estadoFactura, total]
     );
 
     const idFactura = facturaResult.insertId;
