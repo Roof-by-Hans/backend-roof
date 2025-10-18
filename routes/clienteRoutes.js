@@ -312,7 +312,9 @@ router.get("/:id", authenticate, authorizeAdmin, getClientePorId);
  *             schema:
  *               $ref: '#/components/schemas/ClienteDetailResponse'
  *       400:
- *         $ref: '#/components/responses/BadRequestError'
+ *         oneOf:
+ *           - $ref: '#/components/responses/BadRequestError'
+ *           - $ref: '#/components/responses/FileUploadError'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       403:
@@ -429,7 +431,9 @@ router.post("/", authenticate, authorizeAdmin, uploadClient.single('fotoPerfil')
  *             schema:
  *               $ref: '#/components/schemas/ClienteDetailResponse'
  *       400:
- *         $ref: '#/components/responses/BadRequestError'
+ *         oneOf:
+ *           - $ref: '#/components/responses/BadRequestError'
+ *           - $ref: '#/components/responses/FileUploadError'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       403:
