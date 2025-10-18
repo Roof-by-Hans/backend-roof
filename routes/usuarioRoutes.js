@@ -13,7 +13,7 @@ const {
   authenticate,
   authorizeAdmin,
 } = require("../middlewares/authMiddleware");
-const { uploadUser } = require("../config/multer");
+const { uploadUser, handleMulterError } = require("../config/multer");
 
 /**
  * @swagger
@@ -554,7 +554,7 @@ router.get("/:id", authenticate, authorizeAdmin, getUsuarioPorId);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), crearUsuario);
+router.post("/", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), handleMulterError, crearUsuario);
 
 /**
  * @swagger
@@ -752,7 +752,7 @@ router.delete("/:id/roles", authenticate, authorizeAdmin, removerRolesUsuario);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/:id", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), actualizarUsuario);
+router.put("/:id", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), handleMulterError, actualizarUsuario);
 
 /**
  * @swagger

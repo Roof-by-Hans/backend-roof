@@ -7,7 +7,7 @@ const {
   eliminarProducto,
 } = require("../controllers/productoController");
 const { authenticate } = require("../middlewares/authMiddleware");
-const { uploadProduct } = require("../config/multer");
+const { uploadProduct, handleMulterError } = require("../config/multer");
 
 const router = express.Router();
 
@@ -292,7 +292,7 @@ router.get("/:id", authenticate, getProductoPorId);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticate, uploadProduct.single('imagen'), crearProducto);
+router.post("/", authenticate, uploadProduct.single('imagen'), handleMulterError, crearProducto);
 
 /**
  * @swagger
@@ -357,7 +357,7 @@ router.post("/", authenticate, uploadProduct.single('imagen'), crearProducto);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/:id", authenticate, uploadProduct.single('imagen'), actualizarProducto);
+router.put("/:id", authenticate, uploadProduct.single('imagen'), handleMulterError, actualizarProducto);
 
 /**
  * @swagger

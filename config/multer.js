@@ -53,12 +53,15 @@ const clientStorage = multer.diskStorage({
 });
 
 // Filtro de archivos - solo imágenes
+// Utiliza códigos de error explícitos para evitar dependencias de cadenas de texto
 const fileFilter = (req, file, cb) => {
   // Verificar que sea una imagen
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
-    cb(new Error('Solo se permiten archivos de imagen (JPG, PNG, GIF, etc.)'), false);
+    const error = new Error('Solo se permiten archivos de imagen (JPG, PNG, GIF, etc.)');
+    error.code = 'INVALID_FILE_TYPE';
+    cb(error, false);
   }
 };
 
@@ -88,6 +91,7 @@ const uploadClient = multer({
 
 // Middleware para manejar errores de multer
 const handleMulterError = (error, req, res, next) => {
+  // Manejar errores específicos de multer (códigos nativos)
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
       return res.status(400).json({
@@ -109,10 +113,12 @@ const handleMulterError = (error, req, res, next) => {
     }
   }
   
-  if (error.message === 'Solo se permiten archivos de imagen (JPG, PNG, GIF, etc.)') {
+  // Validar por código de error personalizado en lugar de mensaje de texto
+  // Esto evita dependencias frágiles de cadenas de texto
+  if (error.code === 'INVALID_FILE_TYPE') {
     return res.status(400).json({
       success: false,
-      message: error.message
+      message: 'Solo se permiten archivos de imagen (JPG, PNG, GIF, etc.)'
     });
   }
   
