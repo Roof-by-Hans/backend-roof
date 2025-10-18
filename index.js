@@ -58,7 +58,7 @@ app.get("/api/file-upload-info", (req, res) => {
     message: "Información sobre carga de archivos disponible",
     info: {
       maxFileSize: "5MB",
-      allowedTypes: ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"],
+      allowedTypes: ["image/jpeg", "image/png", "image/gif", "image/webp"],
       uploadPaths: {
         productos: "/uploads/productos/",
         usuarios: "/uploads/usuarios/",
