@@ -336,8 +336,15 @@ const actualizarCliente = async (req, res) => {
       
       campos.push("foto_perfil = ?");
       valores.push(req.file.filename);
+    } else if (req.body.eliminarFotoPerfil === "true" || req.body.eliminarFotoPerfil === true) {
+      // Si se solicita eliminar la foto de perfil y no se subió una nueva
+      if (clienteExistente[0].foto_perfil) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'clientes', clienteExistente[0].foto_perfil);
+        await deleteFile(rutaImagenAnterior);
+      }
+      campos.push("foto_perfil = ?");
+      valores.push(null);
     }
-
     if (preferencias !== undefined) {
       campos.push("preferencias = ?");
       valores.push(preferencias || null);
