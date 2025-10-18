@@ -13,6 +13,7 @@ const {
   authenticate,
   authorizeAdmin,
 } = require("../middlewares/authMiddleware");
+const { uploadUser } = require("../config/multer");
 
 /**
  * @swagger
@@ -45,6 +46,16 @@ const {
  *           type: boolean
  *           description: Indica si el usuario puede autenticarse en el sistema
  *           example: true
+ *         fotoPerfil:
+ *           type: string
+ *           description: Nombre del archivo de la foto de perfil del usuario
+ *           example: "usuario-1635123456789-123456789.jpg"
+ *           nullable: true
+ *         fotoPerfilUrl:
+ *           type: string
+ *           description: URL completa para acceder a la foto de perfil del usuario
+ *           example: "http://localhost:3000/uploads/usuarios/usuario-1635123456789-123456789.jpg"
+ *           nullable: true
  *         roles:
  *           type: array
  *           description: Conjunto de roles legibles asociados al usuario
@@ -487,29 +498,37 @@ router.get("/:id", authenticate, authorizeAdmin, getUsuarioPorId);
  * @swagger
  * /api/usuarios:
  *   post:
- *     summary: Crear un nuevo usuario
- *     description: Registra un usuario en la tabla `Usuario`, hasheando la contraseña y aplicando el estado `activo` indicado.
+ *     summary: Crear un nuevo usuario con foto de perfil
+ *     description: Registra un usuario en la tabla `Usuario`, hasheando la contraseña y aplicando el estado `activo` indicado. Opcionalmente incluye una foto de perfil.
  *     tags: [Usuarios]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/CrearUsuarioRequest'
- *           examples:
- *             usuarioActivo:
- *               summary: Usuario activo por defecto
- *               value:
- *                 nombreUsuario: hans123
- *                 contrasena: MiContrasenaSegura123
- *             usuarioInactivo:
- *               summary: Usuario creado como inactivo
- *               value:
- *                 nombreUsuario: ana.garcia
- *                 contrasena: MiContrasenaSegura123
- *                 activo: false
+ *             type: object
+ *             required:
+ *               - nombreUsuario
+ *               - contrasena
+ *             properties:
+ *               nombreUsuario:
+ *                 type: string
+ *                 description: Nombre de usuario único
+ *                 example: "hans123"
+ *               contrasena:
+ *                 type: string
+ *                 description: Contraseña del usuario
+ *                 example: "MiContrasenaSegura123"
+ *               activo:
+ *                 type: boolean
+ *                 description: Estado activo del usuario (por defecto true)
+ *                 example: true
+ *               fotoPerfil:
+ *                 type: string
+ *                 format: binary
+ *                 description: Foto de perfil del usuario (opcional, máx. 5MB)
  *     responses:
  *       201:
  *         description: Usuario creado correctamente
@@ -535,7 +554,7 @@ router.get("/:id", authenticate, authorizeAdmin, getUsuarioPorId);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticate, authorizeAdmin, crearUsuario);
+router.post("/", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), crearUsuario);
 
 /**
  * @swagger
@@ -661,8 +680,8 @@ router.delete("/:id/roles", authenticate, authorizeAdmin, removerRolesUsuario);
  * @swagger
  * /api/usuarios/{id}:
  *   put:
- *     summary: Actualizar un usuario existente
- *     description: Permite modificar datos del usuario, aplicando hash si se cambia la contraseña.
+ *     summary: Actualizar un usuario existente con foto de perfil
+ *     description: Permite modificar datos del usuario, aplicando hash si se cambia la contraseña. Opcionalmente actualiza la foto de perfil.
  *     tags: [Usuarios]
  *     security:
  *       - bearerAuth: []
@@ -674,11 +693,28 @@ router.delete("/:id/roles", authenticate, authorizeAdmin, removerRolesUsuario);
  *         schema:
  *           type: integer
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/ActualizarUsuarioRequest'
+ *             type: object
+ *             properties:
+ *               nombreUsuario:
+ *                 type: string
+ *                 description: Nuevo nombre de usuario (opcional)
+ *                 example: "hans.new"
+ *               contrasena:
+ *                 type: string
+ *                 description: Nueva contraseña (opcional)
+ *                 example: "NuevaClave456"
+ *               activo:
+ *                 type: boolean
+ *                 description: Nuevo estado activo (opcional)
+ *                 example: false
+ *               fotoPerfil:
+ *                 type: string
+ *                 format: binary
+ *                 description: Nueva foto de perfil (opcional, máx. 5MB)
  *           examples:
  *             cambiarNombre:
  *               summary: Modificar el nombre de usuario
@@ -716,7 +752,7 @@ router.delete("/:id/roles", authenticate, authorizeAdmin, removerRolesUsuario);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/:id", authenticate, authorizeAdmin, actualizarUsuario);
+router.put("/:id", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), actualizarUsuario);
 
 /**
  * @swagger

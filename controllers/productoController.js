@@ -1,8 +1,10 @@
+const path = require("path");
 const { promisePool } = require("../config/database");
 const {
   mapProductoRow,
   mapProductosRows,
 } = require("../helpers/productoMapper");
+const { deleteFile, getFileUrl } = require("../config/multer");
 
 const normalizeNombre = (nombre) => {
   if (nombre === undefined || nombre === null) return "";
@@ -82,10 +84,19 @@ const getProductos = async (req, res) => {
          ORDER BY p.nombre`
     );
 
+    // Agregar URL completa de las imágenes
+    const productosConImagenes = rows.map(row => {
+      const producto = mapProductoRow(row);
+      if (producto.fotoPrincipal) {
+        producto.fotoPrincipalUrl = getFileUrl(req, producto.fotoPrincipal, 'productos');
+      }
+      return producto;
+    });
+
     res.json({
       success: true,
       message: "Productos obtenidos correctamente",
-      data: mapProductosRows(rows),
+      data: productosConImagenes,
     });
   } catch (error) {
     console.error("Error al obtener productos:", error);
@@ -117,10 +128,15 @@ const getProductoPorId = async (req, res) => {
       });
     }
 
+    const productoMapeado = mapProductoRow(producto);
+    if (productoMapeado.fotoPrincipal) {
+      productoMapeado.fotoPrincipalUrl = getFileUrl(req, productoMapeado.fotoPrincipal, 'productos');
+    }
+
     res.json({
       success: true,
       message: "Producto obtenido correctamente",
-      data: mapProductoRow(producto),
+      data: productoMapeado,
     });
   } catch (error) {
     console.error("Error al obtener producto:", error);
@@ -137,7 +153,7 @@ const crearProducto = async (req, res) => {
     const nombre = normalizeNombre(req.body?.nombre);
     let precioUnitario;
     let idCategoria;
-    const fotoPrincipal = req.body?.fotoPrincipal ?? req.body?.foto_principal ?? null;
+    const fotoPrincipal = req.file ? req.file.filename : null; // Imagen subida con multer
     const descripcion = req.body?.descripcion ?? null;
 
     try {
@@ -303,13 +319,16 @@ const actualizarProducto = async (req, res) => {
       valores.push(nuevaCategoria);
     }
 
-    if (
-      req.body?.fotoPrincipal !== undefined ||
-      req.body?.foto_principal !== undefined
-    ) {
-      const fotoPrincipal = req.body?.fotoPrincipal ?? req.body?.foto_principal ?? null;
+    // Manejar nueva imagen si se subió
+    if (req.file) {
+      // Si hay una imagen anterior, eliminarla
+      if (productoActual.foto_principal) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'productos', productoActual.foto_principal);
+        await deleteFile(rutaImagenAnterior);
+      }
+      
       campos.push("foto_principal = ?");
-      valores.push(fotoPrincipal);
+      valores.push(req.file.filename);
     }
 
     if (req.body?.descripcion !== undefined) {
@@ -334,11 +353,16 @@ const actualizarProducto = async (req, res) => {
     );
 
     const productoActualizado = await obtenerProductoPorId(id);
+    const productoMapeado = mapProductoRow(productoActualizado);
+    
+    if (productoMapeado.fotoPrincipal) {
+      productoMapeado.fotoPrincipalUrl = getFileUrl(req, productoMapeado.fotoPrincipal, 'productos');
+    }
 
     res.json({
       success: true,
       message: "Producto actualizado correctamente",
-      data: mapProductoRow(productoActualizado),
+      data: productoMapeado,
     });
   } catch (error) {
     console.error("Error al actualizar producto:", error);
@@ -361,6 +385,17 @@ const eliminarProducto = async (req, res) => {
       });
     }
 
+    // Obtener el producto para eliminar la imagen asociada
+    const productoAEliminar = await obtenerProductoPorId(id);
+
+    if (!productoAEliminar) {
+      return res.status(404).json({
+        success: false,
+        message: "Producto no encontrado",
+      });
+    }
+
+    // Eliminar el producto de la base de datos
     const [result] = await promisePool.execute(
       `DELETE FROM Producto
        WHERE id_producto = ?`,
@@ -372,6 +407,12 @@ const eliminarProducto = async (req, res) => {
         success: false,
         message: "Producto no encontrado",
       });
+    }
+
+    // Eliminar la imagen asociada si existe
+    if (productoAEliminar.foto_principal) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', productoAEliminar.foto_principal);
+      await deleteFile(rutaImagen);
     }
 
     res.json({

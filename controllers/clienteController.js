@@ -1,6 +1,8 @@
 const bcrypt = require("bcrypt");
+const path = require("path");
 const { promisePool } = require("../config/database");
 const { mapClienteRow, mapClientesRows } = require("../helpers/clienteMapper");
+const { deleteFile, getFileUrl } = require("../config/multer");
 
 const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
 
@@ -31,9 +33,17 @@ const getClientes = async (req, res) => {
        ORDER BY c.id_cliente`
     );
 
+    // Agregar URL completa de las imágenes de perfil
+    const clientesConImagenes = mapClientesRows(rows).map(cliente => {
+      if (cliente.fotoPerfil) {
+        cliente.fotoPerfilUrl = getFileUrl(req, cliente.fotoPerfil, 'clientes');
+      }
+      return cliente;
+    });
+
     res.json({
       success: true,
-      data: mapClientesRows(rows),
+      data: clientesConImagenes,
       message: "Clientes obtenidos correctamente",
     });
   } catch (error) {
@@ -76,9 +86,14 @@ const getClientePorId = async (req, res) => {
       });
     }
 
+    const clienteMapeado = mapClienteRow(rows[0]);
+    if (clienteMapeado.fotoPerfil) {
+      clienteMapeado.fotoPerfilUrl = getFileUrl(req, clienteMapeado.fotoPerfil, 'clientes');
+    }
+
     res.json({
       success: true,
-      data: mapClienteRow(rows[0]),
+      data: clienteMapeado,
       message: "Cliente obtenido correctamente",
     });
   } catch (error) {
@@ -96,8 +111,8 @@ const getClientePorId = async (req, res) => {
  */
 const crearCliente = async (req, res) => {
   try {
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta, fotoPerfil, preferencias } =
-      req.body;
+    const { nombre, apellido, telefono, email, contrasena, idTarjeta, preferencias } = req.body;
+    const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
 
     // Validaciones básicas
     if (!nombre || !apellido) {
@@ -177,6 +192,10 @@ const crearCliente = async (req, res) => {
       preferencias: preferencias || null,
     });
 
+    if (nuevoCliente.fotoPerfil) {
+      nuevoCliente.fotoPerfilUrl = getFileUrl(req, nuevoCliente.fotoPerfil, 'clientes');
+    }
+
     res.status(201).json({
       success: true,
       data: nuevoCliente,
@@ -206,8 +225,20 @@ const crearCliente = async (req, res) => {
 const actualizarCliente = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta, fotoPerfil, preferencias } =
-      req.body;
+    const { nombre, apellido, telefono, email, contrasena, idTarjeta, preferencias } = req.body;
+
+    // Obtener el cliente existente para manejar la imagen anterior
+    const [clienteExistente] = await promisePool.execute(
+      "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+      [id]
+    );
+
+    if (clienteExistente.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Cliente no encontrado",
+      });
+    }
 
     const campos = [];
     const valores = [];
@@ -295,9 +326,16 @@ const actualizarCliente = async (req, res) => {
       valores.push(idTarjeta);
     }
 
-    if (fotoPerfil !== undefined) {
+    // Manejar nueva imagen si se subió
+    if (req.file) {
+      // Si hay una imagen anterior, eliminarla
+      if (clienteExistente[0].foto_perfil) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'clientes', clienteExistente[0].foto_perfil);
+        await deleteFile(rutaImagenAnterior);
+      }
+      
       campos.push("foto_perfil = ?");
-      valores.push(fotoPerfil || null);
+      valores.push(req.file.filename);
     }
 
     if (preferencias !== undefined) {
@@ -342,9 +380,14 @@ const actualizarCliente = async (req, res) => {
       [id]
     );
 
+    const clienteActualizado = mapClienteRow(rows[0]);
+    if (clienteActualizado.fotoPerfil) {
+      clienteActualizado.fotoPerfilUrl = getFileUrl(req, clienteActualizado.fotoPerfil, 'clientes');
+    }
+
     res.json({
       success: true,
-      data: mapClienteRow(rows[0]),
+      data: clienteActualizado,
       message: "Cliente actualizado correctamente",
     });
   } catch (error) {
@@ -372,6 +415,19 @@ const eliminarCliente = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Obtener la imagen del cliente antes de eliminarlo
+    const [clienteAEliminar] = await promisePool.execute(
+      "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+      [id]
+    );
+
+    if (clienteAEliminar.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Cliente no encontrado",
+      });
+    }
+
     const [result] = await promisePool.execute(
       "DELETE FROM Cliente WHERE id_cliente = ?",
       [id]
@@ -382,6 +438,12 @@ const eliminarCliente = async (req, res) => {
         success: false,
         message: "Cliente no encontrado",
       });
+    }
+
+    // Eliminar la imagen asociada si existe
+    if (clienteAEliminar[0].foto_perfil) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', clienteAEliminar[0].foto_perfil);
+      await deleteFile(rutaImagen);
     }
 
     res.json({

@@ -1,0 +1,149 @@
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Crear directorios si no existen
+const ensureDirectoryExists = (dirPath) => {
+  if (!fs.existsSync(dirPath)) {
+    fs.mkdirSync(dirPath, { recursive: true });
+  }
+};
+
+// Configuración de almacenamiento para productos
+const productStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = path.join(__dirname, '..', 'uploads', 'productos');
+    ensureDirectoryExists(uploadPath);
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    // Generar nombre único con timestamp
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const fileExtension = path.extname(file.originalname);
+    cb(null, `producto-${uniqueSuffix}${fileExtension}`);
+  }
+});
+
+// Configuración de almacenamiento para usuarios
+const userStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = path.join(__dirname, '..', 'uploads', 'usuarios');
+    ensureDirectoryExists(uploadPath);
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const fileExtension = path.extname(file.originalname);
+    cb(null, `usuario-${uniqueSuffix}${fileExtension}`);
+  }
+});
+
+// Configuración de almacenamiento para clientes
+const clientStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = path.join(__dirname, '..', 'uploads', 'clientes');
+    ensureDirectoryExists(uploadPath);
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const fileExtension = path.extname(file.originalname);
+    cb(null, `cliente-${uniqueSuffix}${fileExtension}`);
+  }
+});
+
+// Filtro de archivos - solo imágenes
+const fileFilter = (req, file, cb) => {
+  // Verificar que sea una imagen
+  if (file.mimetype.startsWith('image/')) {
+    cb(null, true);
+  } else {
+    cb(new Error('Solo se permiten archivos de imagen (JPG, PNG, GIF, etc.)'), false);
+  }
+};
+
+// Límites de tamaño (5MB máximo)
+const limits = {
+  fileSize: 5 * 1024 * 1024 // 5MB
+};
+
+// Crear instancias de multer para cada tipo
+const uploadProduct = multer({
+  storage: productStorage,
+  fileFilter: fileFilter,
+  limits: limits
+});
+
+const uploadUser = multer({
+  storage: userStorage,
+  fileFilter: fileFilter,
+  limits: limits
+});
+
+const uploadClient = multer({
+  storage: clientStorage,
+  fileFilter: fileFilter,
+  limits: limits
+});
+
+// Middleware para manejar errores de multer
+const handleMulterError = (error, req, res, next) => {
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'El archivo es demasiado grande. Máximo 5MB permitido.'
+      });
+    }
+    if (error.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({
+        success: false,
+        message: 'Demasiados archivos subidos.'
+      });
+    }
+    if (error.code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Campo de archivo inesperado.'
+      });
+    }
+  }
+  
+  if (error.message === 'Solo se permiten archivos de imagen (JPG, PNG, GIF, etc.)') {
+    return res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+  
+  next(error);
+};
+
+// Función para eliminar archivo si existe
+const deleteFile = (filePath) => {
+  return new Promise((resolve) => {
+    fs.unlink(filePath, (err) => {
+      if (err && err.code !== 'ENOENT') {
+        console.error('Error al eliminar archivo:', err);
+      }
+      resolve();
+    });
+  });
+};
+
+// Función para obtener la URL completa del archivo
+const getFileUrl = (req, filename, type) => {
+  if (!filename) return null;
+  const protocol = req.protocol;
+  const host = req.get('host');
+  return `${protocol}://${host}/uploads/${type}/${filename}`;
+};
+
+module.exports = {
+  uploadProduct,
+  uploadUser,
+  uploadClient,
+  handleMulterError,
+  deleteFile,
+  getFileUrl
+};

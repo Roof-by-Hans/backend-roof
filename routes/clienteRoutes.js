@@ -11,6 +11,7 @@ const {
   authenticate,
   authorizeAdmin,
 } = require("../middlewares/authMiddleware");
+const { uploadClient } = require("../config/multer");
 
 /**
  * @swagger
@@ -60,8 +61,13 @@ const {
  *           nullable: true
  *         fotoPerfil:
  *           type: string
- *           description: URL de la foto de perfil del cliente
- *           example: "https://example.com/fotos/juan-perez.jpg"
+ *           description: Nombre del archivo de la foto de perfil del cliente
+ *           example: "cliente-1635123456789-123456789.jpg"
+ *           nullable: true
+ *         fotoPerfilUrl:
+ *           type: string
+ *           description: URL completa para acceder a la foto de perfil del cliente
+ *           example: "http://localhost:3000/uploads/clientes/cliente-1635123456789-123456789.jpg"
  *           nullable: true
  *         preferencias:
  *           type: string
@@ -248,36 +254,56 @@ router.get("/:id", authenticate, authorizeAdmin, getClientePorId);
  * @swagger
  * /api/clientes:
  *   post:
- *     summary: Crear un nuevo cliente
- *     description: Registra un cliente en la tabla `Cliente`, hasheando la contraseña y validando el formato del email.
+ *     summary: Crear un nuevo cliente con foto de perfil
+ *     description: Registra un cliente en la tabla `Cliente`, hasheando la contraseña y validando el formato del email. Opcionalmente incluye una foto de perfil.
  *     tags: [Clientes]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/CrearClienteRequest'
- *           examples:
- *             clienteBasico:
- *               summary: Cliente con datos básicos
- *               value:
- *                 nombre: Juan
- *                 apellido: Pérez
- *                 email: juan.perez@example.com
- *                 contrasena: MiContrasenaSegura123
- *             clienteCompleto:
- *               summary: Cliente con todos los datos
- *               value:
- *                 nombre: María
- *                 apellido: García
- *                 telefono: "+54 11 1234-5678"
- *                 email: maria.garcia@example.com
- *                 contrasena: MiContrasenaSegura123
- *                 idTarjeta: 5
- *                 fotoPerfil: "https://example.com/fotos/maria-garcia.jpg"
- *                 preferencias: "Tema oscuro, notificaciones activadas, idioma español"
+ *             type: object
+ *             required:
+ *               - nombre
+ *               - apellido
+ *               - email
+ *               - contrasena
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 description: Nombre del cliente
+ *                 example: "Juan"
+ *               apellido:
+ *                 type: string
+ *                 description: Apellido del cliente
+ *                 example: "Pérez"
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Correo electrónico único del cliente
+ *                 example: "juan.perez@example.com"
+ *               contrasena:
+ *                 type: string
+ *                 description: Contraseña del cliente
+ *                 example: "MiContrasenaSegura123"
+ *               telefono:
+ *                 type: string
+ *                 description: Número de teléfono (opcional)
+ *                 example: "+54 11 1234-5678"
+ *               idTarjeta:
+ *                 type: integer
+ *                 description: ID de tarjeta asociada (opcional)
+ *                 example: 5
+ *               preferencias:
+ *                 type: string
+ *                 description: Preferencias del cliente (opcional)
+ *                 example: "Tema oscuro, notificaciones activadas"
+ *               fotoPerfil:
+ *                 type: string
+ *                 format: binary
+ *                 description: Foto de perfil del cliente (opcional, máx. 5MB)
  *     responses:
  *       201:
  *         description: Cliente creado correctamente
@@ -312,14 +338,14 @@ router.get("/:id", authenticate, authorizeAdmin, getClientePorId);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticate, authorizeAdmin, crearCliente);
+router.post("/", authenticate, authorizeAdmin, uploadClient.single('fotoPerfil'), crearCliente);
 
 /**
  * @swagger
  * /api/clientes/{id}:
  *   put:
- *     summary: Actualizar un cliente existente
- *     description: Permite modificar datos del cliente, aplicando hash si se cambia la contraseña y validando formato de email.
+ *     summary: Actualizar un cliente existente con foto de perfil
+ *     description: Permite modificar datos del cliente, aplicando hash si se cambia la contraseña y validando formato de email. Opcionalmente actualiza la foto de perfil.
  *     tags: [Clientes]
  *     security:
  *       - bearerAuth: []
@@ -331,11 +357,45 @@ router.post("/", authenticate, authorizeAdmin, crearCliente);
  *         schema:
  *           type: integer
  *     requestBody:
- *       required: true
+ *       required: false
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/ActualizarClienteRequest'
+ *             type: object
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 description: Nuevo nombre del cliente (opcional)
+ *                 example: "Juan Carlos"
+ *               apellido:
+ *                 type: string
+ *                 description: Nuevo apellido del cliente (opcional)
+ *                 example: "Pérez González"
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Nuevo email del cliente (opcional)
+ *                 example: "nuevo.email@example.com"
+ *               contrasena:
+ *                 type: string
+ *                 description: Nueva contraseña del cliente (opcional)
+ *                 example: "NuevaContrasenaSegura456"
+ *               telefono:
+ *                 type: string
+ *                 description: Nuevo teléfono del cliente (opcional)
+ *                 example: "+54 11 9999-8888"
+ *               idTarjeta:
+ *                 type: integer
+ *                 description: Nueva tarjeta asociada (opcional)
+ *                 example: 3
+ *               preferencias:
+ *                 type: string
+ *                 description: Nuevas preferencias del cliente (opcional)
+ *                 example: "Tema claro, notificaciones por email"
+ *               fotoPerfil:
+ *                 type: string
+ *                 format: binary
+ *                 description: Nueva foto de perfil (opcional, máx. 5MB)
  *           examples:
  *             cambiarEmail:
  *               summary: Modificar el email del cliente
@@ -392,7 +452,7 @@ router.post("/", authenticate, authorizeAdmin, crearCliente);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/:id", authenticate, authorizeAdmin, actualizarCliente);
+router.put("/:id", authenticate, authorizeAdmin, uploadClient.single('fotoPerfil'), actualizarCliente);
 
 /**
  * @swagger
