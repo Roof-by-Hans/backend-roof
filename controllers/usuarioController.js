@@ -224,7 +224,8 @@ const actualizarUsuario = async (req, res) => {
         const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'usuarios', usuarioExistente[0].foto_perfil);
         await deleteFile(rutaImagenAnterior);
       }
-      campos.push("foto_perfil = NULL");
+      campos.push("foto_perfil = ?");
+      valores.push(null);
     }
 
     if (campos.length === 0) {

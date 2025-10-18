@@ -319,7 +319,9 @@ const actualizarProducto = async (req, res) => {
       valores.push(nuevaCategoria);
     }
 
-    // Manejar nueva imagen si se subió
+    // Manejar imagen (nueva imagen o eliminación)
+    const eliminarImagen = req.body?.eliminarImagen === 'true' || req.body?.eliminarImagen === true;
+    
     if (req.file) {
       // Si hay una imagen anterior, eliminarla
       if (productoActual.foto_principal) {
@@ -329,6 +331,15 @@ const actualizarProducto = async (req, res) => {
       
       campos.push("foto_principal = ?");
       valores.push(req.file.filename);
+    } else if (eliminarImagen) {
+      // Si se solicita eliminar la imagen sin subir una nueva
+      if (productoActual.foto_principal) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'productos', productoActual.foto_principal);
+        await deleteFile(rutaImagenAnterior);
+      }
+      
+      campos.push("foto_principal = ?");
+      valores.push(null);
     }
 
     if (req.body?.descripcion !== undefined) {
