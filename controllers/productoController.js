@@ -156,11 +156,20 @@ const crearProducto = async (req, res) => {
     const fotoPrincipal = req.file ? req.file.filename : null; // Imagen subida con multer
     const descripcion = req.body?.descripcion ?? null;
 
+    // Función auxiliar para eliminar imagen si hay error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
+
     try {
       precioUnitario = parsePrecio(
         req.body?.precioUnitario ?? req.body?.precio_unitario
       );
     } catch (parseError) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: parseError.message,
@@ -172,6 +181,7 @@ const crearProducto = async (req, res) => {
         req.body?.idCategoria ?? req.body?.id_categoria
       );
     } catch (parseError) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: parseError.message,
@@ -179,6 +189,7 @@ const crearProducto = async (req, res) => {
     }
 
     if (!nombre) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El nombre del producto es obligatorio",
@@ -186,6 +197,7 @@ const crearProducto = async (req, res) => {
     }
 
     if (precioUnitario === undefined) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El precio unitario es obligatorio",
@@ -193,6 +205,7 @@ const crearProducto = async (req, res) => {
     }
 
     if (idCategoria === undefined) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "La categoría asociada es obligatoria",
@@ -202,6 +215,7 @@ const crearProducto = async (req, res) => {
     const existeCategoria = await categoriaExiste(idCategoria);
 
     if (!existeCategoria) {
+      await eliminarImagenSubida();
       return res.status(404).json({
         success: false,
         message: "La categoría asociada no existe",
@@ -222,6 +236,12 @@ const crearProducto = async (req, res) => {
       data: mapProductoRow(productoCreado),
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al crear producto:", error);
     res.status(500).json({
       success: false,
@@ -236,6 +256,12 @@ const actualizarProducto = async (req, res) => {
     const id = Number(req.params.id);
 
     if (Number.isNaN(id)) {
+      // Si se subió una imagen, eliminarla porque el ID es inválido
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+      
       return res.status(400).json({
         success: false,
         message: "El identificador del producto no es válido",
@@ -245,11 +271,25 @@ const actualizarProducto = async (req, res) => {
     const productoActual = await obtenerProductoPorId(id);
 
     if (!productoActual) {
+      // Si se subió una imagen, eliminarla porque el producto no existe
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+      
       return res.status(404).json({
         success: false,
         message: "Producto no encontrado",
       });
     }
+
+    // Función auxiliar para eliminar imagen subida en caso de error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
 
     const campos = [];
     const valores = [];
@@ -258,6 +298,7 @@ const actualizarProducto = async (req, res) => {
       const nombreNormalizado = normalizeNombre(req.body.nombre);
 
       if (!nombreNormalizado) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El nombre del producto no puede estar vacío",
@@ -279,6 +320,7 @@ const actualizarProducto = async (req, res) => {
           req.body?.precioUnitario ?? req.body?.precio_unitario
         );
       } catch (parseError) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: parseError.message,
@@ -300,6 +342,7 @@ const actualizarProducto = async (req, res) => {
           req.body?.idCategoria ?? req.body?.id_categoria
         );
       } catch (parseError) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: parseError.message,
@@ -309,6 +352,7 @@ const actualizarProducto = async (req, res) => {
       const existeCategoria = await categoriaExiste(nuevaCategoria);
 
       if (!existeCategoria) {
+        await eliminarImagenSubida();
         return res.status(404).json({
           success: false,
           message: "La categoría asociada no existe",
@@ -348,6 +392,7 @@ const actualizarProducto = async (req, res) => {
     }
 
     if (campos.length === 0) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "Debe proporcionar al menos un campo para actualizar",
@@ -376,6 +421,12 @@ const actualizarProducto = async (req, res) => {
       data: productoMapeado,
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al actualizar producto:", error);
     res.status(500).json({
       success: false,

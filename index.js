@@ -31,7 +31,13 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Servir archivos estáticos (imágenes)
+// Servir archivos estáticos (imágenes) de forma pública
+// Las imágenes estarán disponibles en: http://localhost:3000/uploads/{tipo}/{nombre-archivo}
+// Ejemplos:
+//   - http://localhost:3000/uploads/productos/producto-1234567890-123456789.jpg
+//   - http://localhost:3000/uploads/usuarios/usuario-1234567890-123456789.jpg
+//   - http://localhost:3000/uploads/clientes/cliente-1234567890-123456789.jpg
+// Esto evita tener que hacer consultas al servidor por cada imagen
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.use("/api/auth", authRoutes);

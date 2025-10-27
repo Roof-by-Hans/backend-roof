@@ -114,8 +114,17 @@ const crearCliente = async (req, res) => {
     const { nombre, apellido, telefono, email, contrasena, idTarjeta, preferencias } = req.body;
     const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
 
+    // Función auxiliar para eliminar imagen si hay error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
+
     // Validaciones básicas
     if (!nombre || !apellido) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "Los campos nombre y apellido son obligatorios",
@@ -123,6 +132,7 @@ const crearCliente = async (req, res) => {
     }
 
     if (!email) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El campo email es obligatorio",
@@ -130,6 +140,7 @@ const crearCliente = async (req, res) => {
     }
 
     if (!contrasena) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El campo contrasena es obligatorio",
@@ -139,6 +150,7 @@ const crearCliente = async (req, res) => {
     // Validar formato de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El formato del email es inválido",
@@ -152,6 +164,7 @@ const crearCliente = async (req, res) => {
     );
 
     if (emailExistente.length > 0) {
+      await eliminarImagenSubida();
       return res.status(409).json({
         success: false,
         message: "El email ya está registrado",
@@ -166,6 +179,7 @@ const crearCliente = async (req, res) => {
       );
 
       if (tarjeta.length === 0) {
+        await eliminarImagenSubida();
         return res.status(404).json({
           success: false,
           message: "La tarjeta especificada no existe",
@@ -202,6 +216,12 @@ const crearCliente = async (req, res) => {
       message: "Cliente creado correctamente",
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al crear cliente:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
@@ -234,17 +254,32 @@ const actualizarCliente = async (req, res) => {
     );
 
     if (clienteExistente.length === 0) {
+      // Si se subió una imagen, eliminarla porque el cliente no existe
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+      
       return res.status(404).json({
         success: false,
         message: "Cliente no encontrado",
       });
     }
 
+    // Función auxiliar para eliminar imagen subida en caso de error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
+
     const campos = [];
     const valores = [];
 
     if (nombre !== undefined) {
       if (!nombre.trim()) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El nombre no puede estar vacío",
@@ -256,6 +291,7 @@ const actualizarCliente = async (req, res) => {
 
     if (apellido !== undefined) {
       if (!apellido.trim()) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El apellido no puede estar vacío",
@@ -273,6 +309,7 @@ const actualizarCliente = async (req, res) => {
     if (email !== undefined) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El formato del email es inválido",
@@ -286,6 +323,7 @@ const actualizarCliente = async (req, res) => {
       );
 
       if (emailExistente.length > 0) {
+        await eliminarImagenSubida();
         return res.status(409).json({
           success: false,
           message: "El email ya está registrado por otro cliente",
@@ -296,13 +334,7 @@ const actualizarCliente = async (req, res) => {
       valores.push(email);
     }
 
-    if (contrasena !== undefined) {
-      if (!contrasena) {
-        return res.status(400).json({
-          success: false,
-          message: "La contraseña no puede estar vacía",
-        });
-      }
+    if (contrasena !== undefined && contrasena !== null && contrasena !== "") {
       const hashedPassword = await hashPassword(contrasena);
       campos.push("contrasena = ?");
       valores.push(hashedPassword);
@@ -316,6 +348,7 @@ const actualizarCliente = async (req, res) => {
         );
 
         if (tarjeta.length === 0) {
+          await eliminarImagenSubida();
           return res.status(404).json({
             success: false,
             message: "La tarjeta especificada no existe",
@@ -351,6 +384,7 @@ const actualizarCliente = async (req, res) => {
     }
 
     if (campos.length === 0) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "Debe enviar al menos un campo para actualizar",
@@ -398,6 +432,12 @@ const actualizarCliente = async (req, res) => {
       message: "Cliente actualizado correctamente",
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al actualizar cliente:", error);
 
     if (error.code === "ER_DUP_ENTRY") {

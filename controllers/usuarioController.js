@@ -191,13 +191,7 @@ const actualizarUsuario = async (req, res) => {
       valores.push(nombreUsuario);
     }
 
-    if (contrasena !== undefined) {
-      if (!contrasena) {
-        return res.status(400).json({
-          success: false,
-          message: "La contraseña no puede estar vacía",
-        });
-      }
+    if (contrasena !== undefined && contrasena !== null && contrasena !== "") {
       const hashedPassword = await hashPassword(contrasena);
       campos.push("contrasena = ?");
       valores.push(hashedPassword);

@@ -138,11 +138,14 @@ const deleteFile = (filePath) => {
 };
 
 // Función para obtener la URL completa del archivo
+// Esta función genera la URL pública del archivo estático
+// Las imágenes se sirven directamente desde /uploads sin necesidad de middleware adicional
 const getFileUrl = (req, filename, type) => {
   if (!filename) return null;
-  const protocol = req.protocol;
-  const host = req.get('host');
-  return `${protocol}://${host}/uploads/${type}/${filename}`;
+  
+  // Usar SERVER_URL si está definida, sino construir dinámicamente
+  const baseUrl = process.env.SERVER_URL || `${req.protocol}://${req.get('host')}`;
+  return `${baseUrl}/uploads/${type}/${filename}`;
 };
 
 module.exports = {
