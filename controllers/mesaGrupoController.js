@@ -5,6 +5,10 @@ const {
 } = require("../models/mesaGrupoModel");
 const {
   emitMesasActualizadas,
+  emitGrupoCreado,
+  emitGrupoDisuelto,
+  emitMesasUnidas,
+  emitMesasSeparadas,
 } = require("../websocket"); // Importación para emitir eventos WebSocket
 
 const sanitizeId = (value) => {
@@ -28,7 +32,7 @@ const cargarGrupoDetalle = async (idGrupo, connection = promisePool) => {
   }
 
   const [mesasRows] = await connection.execute(
-    `SELECT m.id_mesa, m.nombre
+    `SELECT m.id_mesa, m.nombre, m.capacidad, m.estado, m.id_cliente_actual
        FROM Mesa m
        INNER JOIN MesaGrupo mg ON mg.id_mesa = m.id_mesa
       WHERE mg.id_grupo = ?
@@ -59,7 +63,7 @@ const listarGruposConMesas = async (req, res) => {
     const placeholders = grupoIds.map(() => "?").join(", ");
 
     const [mesasRows] = await promisePool.execute(
-      `SELECT mg.id_grupo, m.id_mesa, m.nombre
+      `SELECT mg.id_grupo, m.id_mesa, m.nombre, m.capacidad, m.estado, m.id_cliente_actual
          FROM MesaGrupo mg
          INNER JOIN Mesa m ON m.id_mesa = mg.id_mesa
         WHERE mg.id_grupo IN (${placeholders})
@@ -190,8 +194,13 @@ const crearGrupo = async (req, res) => {
 
       const grupo = await cargarGrupoDetalle(idGrupo, connection);
 
-      // Emitir evento WebSocket para notificar actualización de mesas
-      emitMesasActualizadas();
+      // Emitir eventos WebSocket específicos
+      emitGrupoCreado(grupo);
+      emitMesasUnidas({
+        idGrupo: grupo.id,
+        nombreGrupo: grupo.nombre,
+        mesasUnidas: mesaIds
+      });
 
       res.status(201).json({
         success: true,
@@ -256,6 +265,14 @@ const disolverGrupo = async (req, res) => {
       return respondError(res, 400, "El identificador del grupo no es válido");
     }
 
+    // Obtener las mesas del grupo antes de eliminarlo
+    const [mesasDelGrupo] = await promisePool.execute(
+      `SELECT id_mesa FROM GrupoMesas WHERE id_grupo = ?`,
+      [id]
+    );
+
+    const mesasLiberadas = mesasDelGrupo.map(m => m.id_mesa);
+
     const [result] = await promisePool.execute(
       `DELETE FROM GrupoMesas
         WHERE id_grupo = ?`,
@@ -266,13 +283,17 @@ const disolverGrupo = async (req, res) => {
       return respondError(res, 404, "El grupo especificado no existe");
     }
 
-    // Emitir evento WebSocket para notificar actualización de mesas
-    emitMesasActualizadas();
+    // Emitir eventos WebSocket específicos
+    emitGrupoDisuelto(id, mesasLiberadas);
+    emitMesasSeparadas({
+      idGrupo: id,
+      mesasSeparadas: mesasLiberadas
+    });
 
     res.json({
       success: true,
       message: "Grupo eliminado correctamente",
-      data: { id },
+      data: { id, mesasLiberadas },
     });
   } catch (error) {
     console.error("Error al eliminar grupo de mesas:", error);

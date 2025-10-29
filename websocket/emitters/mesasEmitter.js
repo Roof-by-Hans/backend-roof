@@ -82,19 +82,19 @@ const emitMesaEliminada = (idMesa) => {
 /**
  * Emitir evento cuando cambia el estado de ocupación de una mesa
  * @param {Number} idMesa - ID de la mesa
- * @param {Object} estado - Estado de la mesa (ocupada, disponible, reservada, etc.)
+ * @param {Object} estadoData - Objeto con { estado, idClienteActual }
  */
-const emitMesaEstadoCambiado = (idMesa, estado) => {
+const emitMesaEstadoCambiado = (idMesa, estadoData) => {
   try {
     const io = getIO();
     
     const payload = {
-      message: 'Estado de mesa cambiado',
+      message: 'Estado de mesa actualizado',
       data: { 
-        id: idMesa, 
-        estado 
+        id: idMesa,           // Number: ID de la mesa
+        estado: estadoData.estado  // String: Estado en MAYÚSCULAS
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date()   // Date object para el frontend
     };
     
     // Emitir a la sala general de mesas
@@ -103,7 +103,7 @@ const emitMesaEstadoCambiado = (idMesa, estado) => {
     // Emitir también a la sala específica de esta mesa
     io.to(`mesa:${idMesa}`).emit('mesa:estado-cambiado', payload);
     
-    console.log(`📤 Evento mesa:estado-cambiado emitido para mesa ${idMesa}`);
+    console.log(`📤 Evento mesa:estado-cambiado emitido para mesa ${idMesa} - Estado: ${estadoData.estado}`);
   } catch (error) {
     console.error('Error al emitir mesa:estado-cambiado:', error.message);
   }
@@ -164,6 +164,97 @@ const emitNotificacionMesas = (mensaje, tipo = 'info') => {
   }
 };
 
+/**
+ * Emitir evento cuando se crea un grupo de mesas
+ * @param {Object} grupo - Datos del grupo creado { idGrupo, nombreGrupo, mesas: [...] }
+ */
+const emitGrupoCreado = (grupo) => {
+  try {
+    const io = getIO();
+    const payload = {
+      message: `Grupo "${grupo.nombre}" creado con ${grupo.mesas.length} mesa(s)`,
+      data: grupo,
+      timestamp: new Date()
+    };
+
+    io.to('mesas').emit('grupo:creado', payload);
+    console.log(`📤 Evento grupo:creado emitido para grupo ${grupo.id}`);
+  } catch (error) {
+    console.error('Error al emitir grupo:creado:', error.message);
+  }
+};
+
+/**
+ * Emitir evento cuando se disuelve un grupo de mesas
+ * @param {Number} idGrupo - ID del grupo disuelto
+ * @param {Array} mesasLiberadas - Array de IDs de mesas que fueron liberadas del grupo
+ */
+const emitGrupoDisuelto = (idGrupo, mesasLiberadas = []) => {
+  try {
+    const io = getIO();
+    const payload = {
+      message: `Grupo disuelto - ${mesasLiberadas.length} mesa(s) liberada(s)`,
+      data: {
+        idGrupo,
+        mesasLiberadas
+      },
+      timestamp: new Date()
+    };
+
+    io.to('mesas').emit('grupo:disuelto', payload);
+    console.log(`📤 Evento grupo:disuelto emitido para grupo ${idGrupo}`);
+  } catch (error) {
+    console.error('Error al emitir grupo:disuelto:', error.message);
+  }
+};
+
+/**
+ * Emitir evento cuando mesas se unen a un grupo
+ * @param {Object} data - { idGrupo, nombreGrupo, mesasUnidas: [id1, id2, ...] }
+ */
+const emitMesasUnidas = (data) => {
+  try {
+    const io = getIO();
+    const payload = {
+      message: `${data.mesasUnidas.length} mesa(s) unida(s) al grupo "${data.nombreGrupo}"`,
+      data: {
+        idGrupo: data.idGrupo,
+        nombreGrupo: data.nombreGrupo,
+        mesasUnidas: data.mesasUnidas
+      },
+      timestamp: new Date()
+    };
+
+    io.to('mesas').emit('mesas:unidas', payload);
+    console.log(`📤 Evento mesas:unidas emitido - ${data.mesasUnidas.length} mesas al grupo ${data.idGrupo}`);
+  } catch (error) {
+    console.error('Error al emitir mesas:unidas:', error.message);
+  }
+};
+
+/**
+ * Emitir evento cuando mesas se separan de un grupo
+ * @param {Object} data - { idGrupo, mesasSeparadas: [id1, id2, ...] }
+ */
+const emitMesasSeparadas = (data) => {
+  try {
+    const io = getIO();
+    const payload = {
+      message: `${data.mesasSeparadas.length} mesa(s) separada(s)`,
+      data: {
+        idGrupo: data.idGrupo,
+        mesasSeparadas: data.mesasSeparadas
+      },
+      timestamp: new Date()
+    };
+
+    io.to('mesas').emit('mesas:separadas', payload);
+    console.log(`📤 Evento mesas:separadas emitido - ${data.mesasSeparadas.length} mesas del grupo ${data.idGrupo}`);
+  } catch (error) {
+    console.error('Error al emitir mesas:separadas:', error.message);
+  }
+};
+
 module.exports = {
   emitMesaCreada,
   emitMesaActualizada,
@@ -171,5 +262,9 @@ module.exports = {
   emitMesaEstadoCambiado,
   emitMesasActualizadas,
   emitToMesa,
-  emitNotificacionMesas
+  emitNotificacionMesas,
+  emitGrupoCreado,
+  emitGrupoDisuelto,
+  emitMesasUnidas,
+  emitMesasSeparadas
 };

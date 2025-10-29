@@ -41,6 +41,9 @@ const mapMesaRow = (row = {}) => {
   return {
     id: row.id_mesa,
     nombre: normalizeNombre(row.nombre ?? row.nombre_mesa),
+    capacidad: row.capacidad || null,
+    estado: row.estado || 'DISPONIBLE',
+    idClienteActual: row.id_cliente_actual || null,
   };
 };
 

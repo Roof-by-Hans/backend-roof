@@ -67,8 +67,11 @@ app.use((err, req, res, next) => {
 });
 
 // Inicializar WebSocket ANTES de iniciar el servidor
-initializeWebSocket(server);
-console.log("🔌 WebSocket configurado");
+const io = initializeWebSocket(server);
+
+// Hacer que io esté disponible en las rutas (middleware)
+app.set('io', io);
+console.log("🔌 WebSocket configurado y disponible en rutas");
 
 // Iniciar el servidor
 server.listen(PORT, async () => {
