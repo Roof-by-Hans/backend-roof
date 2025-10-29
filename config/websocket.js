@@ -4,23 +4,36 @@ const jwt = require('jsonwebtoken');
 let io = null;
 
 /**
- * Middleware de autenticación para WebSocket
+ * Middleware de autenticación opcional para WebSocket
+ * Si hay token lo valida, si no hay, permite la conexión sin autenticar
  */
 const socketAuthMiddleware = (socket, next) => {
   const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.split(' ')[1];
   
+  // Si no hay token, permitir conexión anónima
   if (!token) {
-    return next(new Error('Authentication error: Token no proporcionado'));
+    socket.userId = null;
+    socket.userRole = 'guest';
+    socket.userName = 'Invitado';
+    socket.isAuthenticated = false;
+    return next();
   }
 
+  // Si hay token, intentar validarlo
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     socket.userId = decoded.id;
     socket.userRole = decoded.rol;
     socket.userName = decoded.nombre || 'Usuario';
+    socket.isAuthenticated = true;
     next();
   } catch (error) {
-    next(new Error('Authentication error: Token inválido'));
+    // Si el token es inválido, permitir como invitado
+    socket.userId = null;
+    socket.userRole = 'guest';
+    socket.userName = 'Invitado';
+    socket.isAuthenticated = false;
+    next();
   }
 };
 
@@ -48,7 +61,11 @@ const initializeWebSocket = (server) => {
 
   // Manejo de conexiones
   io.on('connection', (socket) => {
-    console.log(`✅ Cliente conectado: ${socket.id} (Usuario: ${socket.userId}, Rol: ${socket.userRole})`);
+    const userInfo = socket.isAuthenticated 
+      ? `Usuario: ${socket.userName} (ID: ${socket.userId}, Rol: ${socket.userRole})`
+      : 'Invitado (sin autenticar)';
+    
+    console.log(`✅ Cliente conectado: ${socket.id} - ${userInfo}`);
 
     // Registrar handlers de diferentes módulos de forma escalable
     // Cada handler se encarga de sus propios eventos

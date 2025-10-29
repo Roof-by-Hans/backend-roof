@@ -66,15 +66,16 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Inicializar WebSocket ANTES de iniciar el servidor
+initializeWebSocket(server);
+console.log("🔌 WebSocket configurado");
+
 // Iniciar el servidor
 server.listen(PORT, async () => {
   console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
   console.log(
     `📚 Documentación disponible en http://localhost:${PORT}/api-docs`
   );
-  
-  // Inicializar WebSocket
-  initializeWebSocket(server);
   
   await testConnection();
 });
