@@ -5,6 +5,10 @@ const {
   crearNuevaMesa,
   actualizarMesaExistente,
   eliminarMesaExistente,
+  cambiarEstadoMesa,
+  ocuparMesa,
+  liberarMesa,
+  obtenerEstadisticasMesas,
 } = require("../controllers/mesaController");
 const { authenticate } = require("../middlewares/authMiddleware");
 
@@ -241,5 +245,155 @@ router.put("/:id", authenticate, actualizarMesaExistente);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.delete("/:id", authenticate, eliminarMesaExistente);
+
+/**
+ * @swagger
+ * /api/mesas/estadisticas/resumen:
+ *   get:
+ *     summary: Obtener estadísticas de estados de mesas
+ *     tags: [Mesas]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Estadísticas obtenidas correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     disponibles:
+ *                       type: integer
+ *                     ocupadas:
+ *                       type: integer
+ *                     reservadas:
+ *                       type: integer
+ *                     fueraDeServicio:
+ *                       type: integer
+ *                     total:
+ *                       type: integer
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/estadisticas/resumen", authenticate, obtenerEstadisticasMesas);
+
+/**
+ * @swagger
+ * /api/mesas/{id}/estado:
+ *   patch:
+ *     summary: Cambiar el estado de una mesa
+ *     tags: [Mesas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - estado
+ *             properties:
+ *               estado:
+ *                 type: string
+ *                 enum: [DISPONIBLE, OCUPADA, RESERVADA, FUERA_DE_SERVICIO]
+ *               idCliente:
+ *                 type: integer
+ *                 description: ID del cliente (requerido si estado es OCUPADA)
+ *     responses:
+ *       200:
+ *         description: Estado actualizado correctamente
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/:id/estado", authenticate, cambiarEstadoMesa);
+
+/**
+ * @swagger
+ * /api/mesas/{id}/ocupar:
+ *   post:
+ *     summary: Marcar una mesa como ocupada
+ *     tags: [Mesas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               idCliente:
+ *                 type: integer
+ *                 description: ID del cliente que ocupa la mesa
+ *     responses:
+ *       200:
+ *         description: Mesa ocupada correctamente
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       409:
+ *         $ref: '#/components/responses/ConflictError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.post("/:id/ocupar", authenticate, ocuparMesa);
+
+/**
+ * @swagger
+ * /api/mesas/{id}/liberar:
+ *   post:
+ *     summary: Marcar una mesa como disponible
+ *     tags: [Mesas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Mesa liberada correctamente
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.post("/:id/liberar", authenticate, liberarMesa);
 
 module.exports = router;

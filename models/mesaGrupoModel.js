@@ -17,6 +17,8 @@ const mapMesaConGrupoRow = (row = {}) => {
   return {
     idMesa: row.id_mesa,
     nombreMesa: normalizeNombre(row.nombre_mesa ?? row.nombre),
+    estado: row.estado_mesa || row.estado || 'DISPONIBLE',
+    idClienteActual: row.id_cliente_actual || null,
     grupo,
   };
 };

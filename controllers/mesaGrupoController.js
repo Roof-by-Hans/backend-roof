@@ -3,6 +3,9 @@ const {
   normalizeNombre,
   buildGrupoDetalle,
 } = require("../models/mesaGrupoModel");
+const {
+  emitMesasActualizadas,
+} = require("../websocket"); // Importación para emitir eventos WebSocket
 
 const sanitizeId = (value) => {
   const id = Number(value);
@@ -187,6 +190,9 @@ const crearGrupo = async (req, res) => {
 
       const grupo = await cargarGrupoDetalle(idGrupo, connection);
 
+      // Emitir evento WebSocket para notificar actualización de mesas
+      emitMesasActualizadas();
+
       res.status(201).json({
         success: true,
         message: "Grupo de mesas creado correctamente",
@@ -259,6 +265,9 @@ const disolverGrupo = async (req, res) => {
     if (result.affectedRows === 0) {
       return respondError(res, 404, "El grupo especificado no existe");
     }
+
+    // Emitir evento WebSocket para notificar actualización de mesas
+    emitMesasActualizadas();
 
     res.json({
       success: true,
