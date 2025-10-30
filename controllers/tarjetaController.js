@@ -550,6 +550,258 @@ const regenerarUUID = async (req, res) => {
   }
 };
 
+/**
+ * Emitir una nueva tarjeta usando el lector RFID
+ * Activa el lector, espera a que se pase una tarjeta física,
+ * y registra el UID en la base de datos
+ */
+const emitirTarjeta = async (req, res) => {
+  try {
+    // Importación lazy del servicio RFID
+    const { rfidService } = require("../hardware/rfidService");
+
+    const { idTipoSuscripcion, idNivelSuscripcion, saldoActual } = req.body;
+
+    // Validaciones
+    if (!idTipoSuscripcion) {
+      return res.status(400).json({
+        success: false,
+        message: "El tipo de suscripción es requerido",
+      });
+    }
+
+    // Verificar que el tipo de suscripción existe y obtener su nombre
+    const [tipoRows] = await promisePool.execute(
+      `SELECT id_tipo, nombre FROM TipoSuscripcion WHERE id_tipo = ?`,
+      [idTipoSuscripcion]
+    );
+
+    if (tipoRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "El tipo de suscripción especificado no existe",
+      });
+    }
+
+    const tipoSuscripcion = tipoRows[0];
+
+    // Si es tipo CREDITO (id=2), forzar saldo a 0 y requerir nivel
+    if (tipoSuscripcion.nombre === "CREDITO") {
+      if (!idNivelSuscripcion) {
+        return res.status(400).json({
+          success: false,
+          message: "Las tarjetas de CREDITO requieren un nivel de suscripción",
+        });
+      }
+      // Forzar saldo a 0 para CREDITO
+      if (saldoActual && parseFloat(saldoActual) !== 0) {
+        console.warn(
+          `[emitirTarjeta] Saldo inicial ignorado para CREDITO. Se fuerza a 0.`
+        );
+      }
+    }
+
+    // Verificar que el nivel de suscripción existe (si se proporciona)
+    if (idNivelSuscripcion) {
+      const [nivelRows] = await promisePool.execute(
+        `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
+        [idNivelSuscripcion]
+      );
+
+      if (nivelRows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "El nivel de suscripción especificado no existe",
+        });
+      }
+    }
+
+    // Activar el lector RFID y esperar a que se pase una tarjeta (30 segundos)
+    console.log("[emitirTarjeta] Esperando lectura de tarjeta RFID...");
+    let uid;
+    try {
+      uid = await rfidService.readOnce(30000); // 30 segundos de timeout
+      console.log("[emitirTarjeta] UID leído:", uid);
+    } catch (error) {
+      console.error("[emitirTarjeta] Error al leer tarjeta:", error.message);
+      return res.status(408).json({
+        success: false,
+        message: "Tiempo de espera agotado. No se detectó ninguna tarjeta.",
+      });
+    }
+
+    const uuid = uid.toUpperCase().trim();
+
+    // Verificar que el UID no exista en la base de datos
+    const [uidRows] = await promisePool.execute(
+      `SELECT id_tarjeta FROM Tarjeta WHERE uuid = ?`,
+      [uuid]
+    );
+
+    if (uidRows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: "Esta tarjeta física ya se encuentra registrada en el sistema",
+      });
+    }
+
+    // Determinar el saldo final según el tipo de suscripción
+    let saldoFinal;
+    if (tipoSuscripcion.nombre === "CREDITO") {
+      saldoFinal = 0.0; // CREDITO siempre inicia en 0
+    } else {
+      saldoFinal = saldoActual !== undefined ? parseFloat(saldoActual) : 0.0;
+      if (isNaN(saldoFinal) || saldoFinal < 0) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "El saldo actual debe ser un número válido mayor o igual a 0",
+        });
+      }
+    }
+
+    // Insertar la tarjeta en la base de datos
+    const [result] = await promisePool.execute(
+      `INSERT INTO Tarjeta (uuid, id_tipo_suscripcion, id_nivel_suscripcion, saldo_actual)
+       VALUES (?, ?, ?, ?)`,
+      [uuid, idTipoSuscripcion, idNivelSuscripcion || null, saldoFinal]
+    );
+
+    // Obtener la tarjeta recién creada con todos sus datos
+    const [nuevaTarjeta] = await promisePool.execute(
+      `SELECT t.id_tarjeta,
+        t.uuid,
+        t.id_tipo_suscripcion,
+        ts.nombre AS nombre_tipo_suscripcion,
+        t.id_nivel_suscripcion,
+        ns.nombre AS nombre_nivel_suscripcion,
+        ns.limite_credito AS limite_credito_nivel,
+        t.saldo_actual
+       FROM Tarjeta t
+       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+       WHERE t.id_tarjeta = ?`,
+      [result.insertId]
+    );
+
+    console.log("[emitirTarjeta] Tarjeta emitida exitosamente:", uuid);
+
+    res.status(201).json({
+      success: true,
+      data: mapTarjetaRow(nuevaTarjeta[0]),
+      message: "Tarjeta emitida y registrada exitosamente",
+    });
+  } catch (error) {
+    console.error("[emitirTarjeta] Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Verificar estado del lector RFID
+ */
+const verificarLectorRFID = async (req, res) => {
+  try {
+    const { rfidService } = require("../hardware/rfidService");
+
+    const estado = {
+      disponible: rfidService.isReady(),
+      conectando: rfidService.connecting,
+      puerto: rfidService.port?.path || null,
+    };
+
+    res.json({
+      success: true,
+      data: estado,
+      message: estado.disponible
+        ? "Lector RFID disponible"
+        : "Lector RFID no disponible",
+    });
+  } catch (error) {
+    console.error("[verificarLectorRFID] Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al verificar el lector RFID",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Leer una tarjeta RFID sin registrarla (solo obtener el UID)
+ */
+const leerTarjetaRFID = async (req, res) => {
+  try {
+    const { rfidService } = require("../hardware/rfidService");
+
+    console.log("[leerTarjetaRFID] Esperando lectura de tarjeta...");
+
+    let uid;
+    try {
+      uid = await rfidService.readOnce(30000); // 30 segundos
+      console.log("[leerTarjetaRFID] UID leído:", uid);
+    } catch (error) {
+      console.error("[leerTarjetaRFID] Error:", error.message);
+      return res.status(408).json({
+        success: false,
+        message: "Tiempo de espera agotado. No se detectó ninguna tarjeta.",
+      });
+    }
+
+    const uuid = uid.toUpperCase().trim();
+
+    // Verificar si la tarjeta ya existe en el sistema
+    const [rows] = await promisePool.execute(
+      `SELECT t.id_tarjeta,
+        t.uuid,
+        t.id_tipo_suscripcion,
+        ts.nombre AS nombre_tipo_suscripcion,
+        t.id_nivel_suscripcion,
+        ns.nombre AS nombre_nivel_suscripcion,
+        ns.limite_credito AS limite_credito_nivel,
+        t.saldo_actual
+       FROM Tarjeta t
+       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+       WHERE t.uuid = ?`,
+      [uuid]
+    );
+
+    if (rows.length > 0) {
+      res.json({
+        success: true,
+        data: {
+          uid: uuid,
+          registrada: true,
+          tarjeta: mapTarjetaRow(rows[0]),
+        },
+        message: "Tarjeta leída correctamente (ya registrada en el sistema)",
+      });
+    } else {
+      res.json({
+        success: true,
+        data: {
+          uid: uuid,
+          registrada: false,
+          tarjeta: null,
+        },
+        message: "Tarjeta leída correctamente (no registrada en el sistema)",
+      });
+    }
+  } catch (error) {
+    console.error("[leerTarjetaRFID] Error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error al leer la tarjeta RFID",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getTarjetas,
   getTarjetaPorId,
@@ -559,4 +811,7 @@ module.exports = {
   eliminarTarjeta,
   actualizarSaldo,
   regenerarUUID,
+  emitirTarjeta,
+  verificarLectorRFID,
+  leerTarjetaRFID,
 };

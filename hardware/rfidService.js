@@ -116,12 +116,33 @@ class RfidService extends EventEmitter {
       });
       this.parser = this.port.pipe(new ReadlineParser({ delimiter: "\n" }));
 
-      this.port.on("open", () => {
-        this.ready = true;
-        this.connecting = false;
-        this.emit("ready", { path: resolvedPath, baudRate: resolvedBaud });
+      // Esperar a que el puerto se abra antes de continuar
+      await new Promise((resolve, reject) => {
+        const openTimeout = setTimeout(() => {
+          reject(new Error("Timeout al abrir puerto serie"));
+        }, 5000);
+
+        this.port.on("open", () => {
+          clearTimeout(openTimeout);
+          this.ready = true;
+          this.connecting = false;
+          console.log(
+            "[rfidService.connect] Puerto serie abierto exitosamente"
+          );
+          this.emit("ready", { path: resolvedPath, baudRate: resolvedBaud });
+          resolve();
+        });
+
+        this.port.on("error", (err) => {
+          clearTimeout(openTimeout);
+          this.ready = false;
+          this.connecting = false;
+          this.emit("error", err);
+          reject(err);
+        });
       });
 
+      // Configurar event handlers para después de abrir
       this.port.on("error", (err) => {
         this.ready = false;
         this.connecting = false;
@@ -151,6 +172,7 @@ class RfidService extends EventEmitter {
 
       return true;
     } catch (err) {
+      console.error("[rfidService.connect] ERROR:", err.message);
       this.connecting = false;
       this.ready = false;
       this.emit("error", err);
@@ -169,7 +191,26 @@ class RfidService extends EventEmitter {
 
     if (!this.ready && !this.connecting) {
       console.log("[rfidService.readOnce] Iniciando conexión...");
-      await this.connect();
+      const connected = await this.connect();
+      if (!connected) {
+        console.error("[rfidService.readOnce] ERROR - No se pudo conectar");
+        throw new Error("No se pudo conectar al lector RFID");
+      }
+    }
+
+    // Esperar a que esté ready si todavía está conectando
+    if (this.connecting) {
+      console.log(
+        "[rfidService.readOnce] Esperando a que finalice la conexión..."
+      );
+      await new Promise((resolve) => {
+        const checkReady = setInterval(() => {
+          if (this.ready || !this.connecting) {
+            clearInterval(checkReady);
+            resolve();
+          }
+        }, 100);
+      });
     }
 
     if (!this.ready) {

@@ -16,7 +16,8 @@ const productoRoutes = require("./routes/productoRoutes");
 const mesaGrupoRoutes = require("./routes/mesaGrupoRoutes");
 const mesaRoutes = require("./routes/mesaRoutes");
 const rfidRoutes = require("./routes/rfidRoutes");
-const { rfidService } = require("./hardware/rfidService");
+// NOTA: No importar rfidService aquí para evitar inicialización automática
+// const { rfidService } = require("./hardware/rfidService");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -33,7 +34,24 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/auth-cliente", authClienteRoutes);
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    swaggerOptions: {
+      persistAuthorization: true, // Mantiene el token JWT después de recargar
+      requestInterceptor: (req) => {
+        // Agrega timestamp para debugging
+        req.url = req.url.includes("?")
+          ? `${req.url}&_t=${Date.now()}`
+          : `${req.url}?_t=${Date.now()}`;
+        return req;
+      },
+    },
+    customSiteTitle: "Roof by Hans API Docs",
+    customCss: ".swagger-ui .topbar { display: none }", // Oculta el banner de Swagger
+  })
+);
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/clientes", clienteRoutes);
 app.use("/api/categorias-producto", categoriaProductoRoutes);
@@ -73,26 +91,8 @@ app.listen(PORT, async () => {
     `📚 Documentación disponible en http://localhost:${PORT}/api-docs`
   );
   await testConnection();
-  // Intentar conectar lector RFID (no bloqueante)
-  try {
-    console.log("🔍 Inicializando servicio RFID...");
-    rfidService.on("ready", (info) =>
-      console.log(`🔌 RFID listo en ${info.path} @ ${info.baudRate} baud`)
-    );
-    rfidService.on("card", (uid) => console.log(`💳 UID detectado: ${uid}`));
-    rfidService.on("error", (err) =>
-      console.warn("❌ RFID error:", err.message)
-    );
-
-    const connected = await rfidService.connect();
-    if (connected) {
-      console.log("✅ Servicio RFID conectado exitosamente");
-    } else {
-      console.log("⚠️ Servicio RFID no pudo conectarse");
-    }
-  } catch (e) {
-    console.warn("❌ RFID no inicializado:", e.message);
-  }
+  // NOTA: NO inicializar RFID aquí - se inicializa de forma lazy cuando se llama al endpoint
+  console.log("⚡ Servicio RFID: Inicialización diferida (lazy loading)");
 });
 
 module.exports = app;

@@ -9,6 +9,9 @@ const {
   eliminarTarjeta,
   actualizarSaldo,
   regenerarUUID,
+  emitirTarjeta,
+  verificarLectorRFID,
+  leerTarjetaRFID,
 } = require("../controllers/tarjetaController");
 const {
   authenticate,
@@ -217,23 +220,60 @@ router.get("/", /*authenticate, authorizeAdmin,*/ getTarjetas);
  * @swagger
  * /api/tarjetas:
  *   post:
- *     summary: Crear (emitir) una nueva tarjeta física
+ *     summary: Crear una tarjeta con UUID manual
+ *     description: |
+ *       Crea una nueva tarjeta proporcionando el UUID manualmente.
+ *       **Nota:** Para emitir tarjetas usando el lector RFID, usa el endpoint POST /api/tarjetas/emitir
  *     tags: [Tarjetas]
- *     security:
- *       - bearerAuth: []
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/TarjetaInput'
+ *             type: object
+ *             required:
+ *               - uuid
+ *               - idTipoSuscripcion
+ *             properties:
+ *               uuid:
+ *                 type: string
+ *                 description: UUID de la tarjeta (debe ser único)
+ *                 example: "A1B2C3D4"
+ *               idTipoSuscripcion:
+ *                 type: integer
+ *                 description: ID del tipo de suscripción (1=PREPAGA, 2=CREDITO)
+ *                 example: 1
+ *               idNivelSuscripcion:
+ *                 type: integer
+ *                 description: ID del nivel de suscripción (requerido para CREDITO)
+ *                 example: 1
+ *               saldoActual:
+ *                 type: number
+ *                 format: double
+ *                 description: Saldo inicial (solo para PREPAGA, CREDITO siempre inicia en 0)
+ *                 example: 100.00
  *     responses:
  *       201:
  *         description: Tarjeta creada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Tarjeta'
+ *                 message:
+ *                   type: string
+ *                   example: "Tarjeta creada exitosamente"
  *       400:
- *         description: Error de validación
+ *         description: Error de validación o datos faltantes
  *       409:
- *         description: UID ya registrado
+ *         description: El UUID ya está registrado en el sistema
+ *       500:
+ *         description: Error interno del servidor
  */
 // router.post("/", authenticate, authorizeAdmin, crearTarjeta);
 router.post("/", crearTarjeta); // SIN AUTH PARA PRUEBAS
@@ -720,5 +760,153 @@ router.patch(
   authorizeAdmin,
   regenerarUUID
 );
+
+/**
+ * @swagger
+ * /api/tarjetas/emitir:
+ *   post:
+ *     summary: 🎴 Emitir tarjeta con lector RFID automático
+ *     description: |
+ *       **Este es el endpoint principal para emitir tarjetas físicas.**
+ *
+ *       Flujo de trabajo:
+ *       1. Se envían los datos de la tarjeta (tipo, nivel, saldo)
+ *       2. El backend activa el lector RFID automáticamente
+ *       3. El sistema espera 30 segundos a que acerques la tarjeta al lector
+ *       4. Se captura el UID de la tarjeta física
+ *       5. Se verifica que no esté duplicada
+ *       6. Se registra en el sistema con el UID leído
+ *
+ *       **No necesitas enviar el UUID**, el lector lo captura automáticamente.
+ *     tags: [Tarjetas]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - idTipoSuscripcion
+ *             properties:
+ *               idTipoSuscripcion:
+ *                 type: integer
+ *                 description: ID del tipo de suscripción (1=PREPAGA, 2=CREDITO)
+ *                 example: 1
+ *               idNivelSuscripcion:
+ *                 type: integer
+ *                 description: ID del nivel de suscripción (requerido para CREDITO)
+ *                 example: 1
+ *               saldoActual:
+ *                 type: number
+ *                 format: double
+ *                 description: Saldo inicial (solo para PREPAGA, CREDITO siempre inicia en 0)
+ *                 example: 100.00
+ *     responses:
+ *       201:
+ *         description: Tarjeta emitida y registrada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Tarjeta'
+ *                 message:
+ *                   type: string
+ *                   example: "Tarjeta emitida y registrada exitosamente"
+ *       400:
+ *         description: Datos inválidos o falta información requerida
+ *       408:
+ *         description: Tiempo de espera agotado, no se detectó tarjeta
+ *       409:
+ *         description: La tarjeta física ya está registrada
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/emitir", authenticate, authorizeAdmin, emitirTarjeta);
+
+/**
+ * @swagger
+ * /api/tarjetas/rfid/verificar:
+ *   get:
+ *     summary: Verificar estado del lector RFID
+ *     description: Retorna el estado actual del lector RFID (disponible, conectando, puerto)
+ *     tags: [Tarjetas]
+ *     responses:
+ *       200:
+ *         description: Estado del lector RFID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     disponible:
+ *                       type: boolean
+ *                       example: true
+ *                     conectando:
+ *                       type: boolean
+ *                       example: false
+ *                     puerto:
+ *                       type: string
+ *                       example: "/dev/ttyUSB0"
+ *                 message:
+ *                   type: string
+ *                   example: "Lector RFID disponible"
+ *       500:
+ *         description: Error al verificar el lector
+ */
+router.get("/rfid/verificar", verificarLectorRFID);
+
+/**
+ * @swagger
+ * /api/tarjetas/rfid/leer:
+ *   get:
+ *     summary: Leer una tarjeta RFID sin registrarla
+ *     description: Activa el lector RFID, espera 30 segundos a que se pase una tarjeta y retorna el UID. También indica si la tarjeta ya está registrada en el sistema
+ *     tags: [Tarjetas]
+ *     responses:
+ *       200:
+ *         description: Tarjeta leída correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     uid:
+ *                       type: string
+ *                       example: "A1B2C3D4"
+ *                     registrada:
+ *                       type: boolean
+ *                       example: true
+ *                     tarjeta:
+ *                       oneOf:
+ *                         - $ref: '#/components/schemas/Tarjeta'
+ *                         - type: null
+ *                 message:
+ *                   type: string
+ *                   example: "Tarjeta leída correctamente"
+ *       408:
+ *         description: Tiempo de espera agotado, no se detectó tarjeta
+ *       500:
+ *         description: Error al leer la tarjeta
+ */
+router.get("/rfid/leer", leerTarjetaRFID);
 
 module.exports = router;
