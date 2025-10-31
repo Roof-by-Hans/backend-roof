@@ -127,6 +127,26 @@ const emitMesasActualizadas = () => {
 };
 
 /**
+ * Emitir lista completa de mesas con sus grupos
+ * @param {Array} mesas - Array de mesas con información de grupo
+ */
+const emitMesasConGrupos = (mesas) => {
+  try {
+    const io = getIO();
+    const payload = {
+      message: `Lista de ${mesas.length} mesa(s) con información de grupos`,
+      data: mesas,
+      timestamp: new Date()
+    };
+
+    io.to('mesas').emit('mesas:lista-completa', payload);
+    console.log(`📤 Evento mesas:lista-completa emitido - ${mesas.length} mesa(s)`);
+  } catch (error) {
+    console.error('Error al emitir mesas:lista-completa:', error.message);
+  }
+};
+
+/**
  * Emitir evento a una mesa específica
  * @param {Number} idMesa - ID de la mesa
  * @param {String} evento - Nombre del evento
@@ -261,6 +281,7 @@ module.exports = {
   emitMesaEliminada,
   emitMesaEstadoCambiado,
   emitMesasActualizadas,
+  emitMesasConGrupos,
   emitToMesa,
   emitNotificacionMesas,
   emitGrupoCreado,

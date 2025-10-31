@@ -121,7 +121,7 @@ CREATE TABLE IF NOT EXISTS `hansdev`.`Tarjeta` (
     FOREIGN KEY (`id_nivel_suscripcion`)
     REFERENCES `hansdev`.`NivelSuscripcion` (`id_nivel`))
 ENGINE = InnoDB
-AUTO_INCREMENT = 8;
+AUTO_INCREMENT = 10;
 
 
 -- -----------------------------------------------------
@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS `hansdev`.`Mesa` (
     ON DELETE SET NULL
     ON UPDATE CASCADE)
 ENGINE = InnoDB
-AUTO_INCREMENT = 11;
+AUTO_INCREMENT = 12;
 
 
 -- -----------------------------------------------------
@@ -469,4 +469,3 @@ CREATE  OR REPLACE ALGORITHM=UNDEFINED DEFINER=`hansdev`@`%` SQL SECURITY DEFINE
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS;
--- Fin de archivo

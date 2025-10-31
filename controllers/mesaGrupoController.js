@@ -2,6 +2,7 @@ const { promisePool } = require("../config/database");
 const {
   normalizeNombre,
   buildGrupoDetalle,
+  mapMesaConGrupoRows,
 } = require("../models/mesaGrupoModel");
 const {
   emitMesasActualizadas,
@@ -9,6 +10,7 @@ const {
   emitGrupoDisuelto,
   emitMesasUnidas,
   emitMesasSeparadas,
+  emitMesasConGrupos,
 } = require("../websocket"); // Importación para emitir eventos WebSocket
 
 const sanitizeId = (value) => {
@@ -18,6 +20,23 @@ const sanitizeId = (value) => {
 
 const respondError = (res, status, message, extra = {}) =>
   res.status(status).json({ success: false, message, ...extra });
+
+/**
+ * Obtener todas las mesas con información de grupos y emitir por WebSocket
+ */
+const emitirListaCompletaMesas = async () => {
+  try {
+    const [rows] = await promisePool.execute(
+      `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, id_grupo, nombre_grupo
+         FROM vw_mesas_con_grupo
+        ORDER BY nombre_mesa`
+    );
+    const mesas = mapMesaConGrupoRows(rows);
+    emitMesasConGrupos(mesas);
+  } catch (error) {
+    console.error('Error al emitir lista completa de mesas:', error);
+  }
+};
 
 const cargarGrupoDetalle = async (idGrupo, connection = promisePool) => {
   const [grupoRows] = await connection.execute(
@@ -32,7 +51,7 @@ const cargarGrupoDetalle = async (idGrupo, connection = promisePool) => {
   }
 
   const [mesasRows] = await connection.execute(
-    `SELECT m.id_mesa, m.nombre, m.capacidad, m.estado, m.id_cliente_actual
+    `SELECT m.id_mesa, m.nombre, m.estado, m.id_cliente_actual
        FROM Mesa m
        INNER JOIN MesaGrupo mg ON mg.id_mesa = m.id_mesa
       WHERE mg.id_grupo = ?
@@ -63,7 +82,7 @@ const listarGruposConMesas = async (req, res) => {
     const placeholders = grupoIds.map(() => "?").join(", ");
 
     const [mesasRows] = await promisePool.execute(
-      `SELECT mg.id_grupo, m.id_mesa, m.nombre, m.capacidad, m.estado, m.id_cliente_actual
+      `SELECT mg.id_grupo, m.id_mesa, m.nombre, m.estado, m.id_cliente_actual
          FROM MesaGrupo mg
          INNER JOIN Mesa m ON m.id_mesa = mg.id_mesa
         WHERE mg.id_grupo IN (${placeholders})
@@ -201,6 +220,9 @@ const crearGrupo = async (req, res) => {
         nombreGrupo: grupo.nombre,
         mesasUnidas: mesaIds
       });
+      
+      // Emitir lista completa actualizada de mesas con grupos
+      await emitirListaCompletaMesas();
 
       res.status(201).json({
         success: true,
@@ -267,7 +289,7 @@ const disolverGrupo = async (req, res) => {
 
     // Obtener las mesas del grupo antes de eliminarlo
     const [mesasDelGrupo] = await promisePool.execute(
-      `SELECT id_mesa FROM GrupoMesas WHERE id_grupo = ?`,
+      `SELECT id_mesa FROM MesaGrupo WHERE id_grupo = ?`,
       [id]
     );
 
@@ -289,6 +311,9 @@ const disolverGrupo = async (req, res) => {
       idGrupo: id,
       mesasSeparadas: mesasLiberadas
     });
+    
+    // Emitir lista completa actualizada de mesas con grupos
+    await emitirListaCompletaMesas();
 
     res.json({
       success: true,
@@ -303,9 +328,203 @@ const disolverGrupo = async (req, res) => {
   }
 };
 
+/**
+ * Agregar o remover mesas de un grupo existente
+ * @param {Object} req.body - { agregar: [ids], remover: [ids] }
+ */
+const modificarMesasGrupo = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  
+  try {
+    const idGrupo = sanitizeId(req.params.id);
+    const { agregar = [], remover = [] } = req.body || {};
+
+    if (!idGrupo) {
+      return respondError(res, 400, "El identificador del grupo no es válido");
+    }
+
+    // Validar que al menos una operación esté presente
+    if (agregar.length === 0 && remover.length === 0) {
+      return respondError(
+        res,
+        400,
+        "Debe especificar mesas para agregar o remover"
+      );
+    }
+
+    await connection.beginTransaction();
+
+    // Verificar que el grupo existe
+    const [grupoRows] = await connection.execute(
+      `SELECT id_grupo, nombre FROM GrupoMesas WHERE id_grupo = ?`,
+      [idGrupo]
+    );
+
+    if (grupoRows.length === 0) {
+      await connection.rollback();
+      return respondError(res, 404, "El grupo especificado no existe");
+    }
+
+    const nombreGrupo = grupoRows[0].nombre;
+    const mesasAgregadas = [];
+    const mesasRemovidas = [];
+
+    // AGREGAR MESAS AL GRUPO
+    if (agregar.length > 0) {
+      // Validar que las mesas existen
+      const placeholders = agregar.map(() => "?").join(", ");
+      const [mesasExistentes] = await connection.execute(
+        `SELECT id_mesa FROM Mesa WHERE id_mesa IN (${placeholders})`,
+        agregar
+      );
+
+      if (mesasExistentes.length !== agregar.length) {
+        await connection.rollback();
+        return respondError(
+          res,
+          404,
+          "Una o más mesas especificadas no existen"
+        );
+      }
+
+      // Verificar que no estén ya en este grupo u otro grupo
+      const [mesasEnGrupo] = await connection.execute(
+        `SELECT id_mesa, id_grupo FROM MesaGrupo WHERE id_mesa IN (${placeholders})`,
+        agregar
+      );
+
+      if (mesasEnGrupo.length > 0) {
+        await connection.rollback();
+        
+        const mesasYaEnGrupo = mesasEnGrupo.filter(m => m.id_grupo === idGrupo);
+        const mesasEnOtroGrupo = mesasEnGrupo.filter(m => m.id_grupo !== idGrupo);
+        
+        if (mesasEnOtroGrupo.length > 0) {
+          return respondError(
+            res,
+            409,
+            "Una o más mesas ya pertenecen a otro grupo",
+            { mesasOcupadas: mesasEnOtroGrupo }
+          );
+        }
+        
+        if (mesasYaEnGrupo.length > 0) {
+          return respondError(
+            res,
+            409,
+            "Una o más mesas ya pertenecen a este grupo",
+            { mesasYaEnGrupo: mesasYaEnGrupo.map(m => m.id_mesa) }
+          );
+        }
+      }
+
+      // Insertar las nuevas mesas en el grupo
+      const values = agregar.flatMap((idMesa) => [idGrupo, idMesa]);
+      const insertPlaceholders = agregar.map(() => "(?, ?)").join(", ");
+
+      await connection.execute(
+        `INSERT INTO MesaGrupo (id_grupo, id_mesa) VALUES ${insertPlaceholders}`,
+        values
+      );
+
+      mesasAgregadas.push(...agregar);
+    }
+
+    // REMOVER MESAS DEL GRUPO
+    if (remover.length > 0) {
+      const placeholders = remover.map(() => "?").join(", ");
+      
+      // Verificar que las mesas están en este grupo
+      const [mesasEnEsteGrupo] = await connection.execute(
+        `SELECT id_mesa FROM MesaGrupo 
+         WHERE id_grupo = ? AND id_mesa IN (${placeholders})`,
+        [idGrupo, ...remover]
+      );
+
+      if (mesasEnEsteGrupo.length !== remover.length) {
+        await connection.rollback();
+        return respondError(
+          res,
+          404,
+          "Una o más mesas no pertenecen a este grupo"
+        );
+      }
+
+      // Verificar que no se quede el grupo vacío
+      const [countMesas] = await connection.execute(
+        `SELECT COUNT(*) as total FROM MesaGrupo WHERE id_grupo = ?`,
+        [idGrupo]
+      );
+
+      const totalMesasEnGrupo = countMesas[0].total;
+      
+      if (totalMesasEnGrupo - remover.length === 0) {
+        await connection.rollback();
+        return respondError(
+          res,
+          400,
+          "No se puede remover todas las mesas del grupo. Use DELETE para disolver el grupo."
+        );
+      }
+
+      // Eliminar las mesas del grupo
+      await connection.execute(
+        `DELETE FROM MesaGrupo 
+         WHERE id_grupo = ? AND id_mesa IN (${placeholders})`,
+        [idGrupo, ...remover]
+      );
+
+      mesasRemovidas.push(...remover);
+    }
+
+    await connection.commit();
+
+    // Obtener el grupo actualizado
+    const grupoActualizado = await cargarGrupoDetalle(idGrupo);
+
+    // Emitir eventos WebSocket
+    if (mesasAgregadas.length > 0) {
+      emitMesasUnidas({
+        idGrupo,
+        nombreGrupo,
+        mesasUnidas: mesasAgregadas,
+      });
+    }
+
+    if (mesasRemovidas.length > 0) {
+      emitMesasSeparadas({
+        idGrupo,
+        mesasSeparadas: mesasRemovidas,
+      });
+    }
+
+    // Emitir lista completa actualizada
+    await emitirListaCompletaMesas();
+
+    res.json({
+      success: true,
+      message: "Grupo modificado correctamente",
+      data: {
+        grupo: grupoActualizado,
+        mesasAgregadas,
+        mesasRemovidas,
+      },
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Error al modificar mesas del grupo:", error);
+    return respondError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  } finally {
+    connection.release();
+  }
+};
+
 module.exports = {
   listarGruposConMesas,
   crearGrupo,
   obtenerGrupo,
   disolverGrupo,
+  modificarMesasGrupo,
 };
