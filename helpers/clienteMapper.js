@@ -6,6 +6,13 @@
 const mapClienteRow = (row) => {
   if (!row) return null;
 
+  // Construir URL de foto de perfil si existe
+  const fotoPerfilUrl = row.foto_perfil
+    ? `${process.env.API_URL || "http://localhost:3000"}/uploads/clientes/${
+        row.foto_perfil
+      }`
+    : null;
+
   return {
     id: row.id_cliente,
     nombre: row.nombre,
@@ -14,6 +21,7 @@ const mapClienteRow = (row) => {
     email: row.email || null,
     idTarjeta: row.id_tarjeta || null,
     fotoPerfil: row.foto_perfil || null,
+    fotoPerfilUrl: fotoPerfilUrl,
     preferencias: row.preferencias || null,
     // Si hay información de tarjeta relacionada
     ...(row.tarjeta_uuid && {

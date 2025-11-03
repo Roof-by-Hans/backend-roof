@@ -336,11 +336,18 @@ router.get("/:id", authenticate, authorizeAdmin, getClientePorId);
  *               $ref: '#/components/schemas/ErrorResponse'
  *             example:
  *               success: false
- *               message: El email ya está registrado
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
+               message: El email ya está registrado
+       500:
+         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticate, authorizeAdmin, uploadClient.single('fotoPerfil'), handleMulterError, crearCliente);
+router.post(
+  "/",
+  authenticate,
+  authorizeAdmin,
+  uploadClient.single("fotoPerfil"),
+  handleMulterError,
+  crearCliente
+);
 
 /**
  * @swagger
@@ -452,11 +459,18 @@ router.post("/", authenticate, authorizeAdmin, uploadClient.single('fotoPerfil')
  *               $ref: '#/components/schemas/ErrorResponse'
  *             example:
  *               success: false
- *               message: El email ya está registrado por otro cliente
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
+               message: El email ya está registrado por otro cliente
+       500:
+         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/:id", authenticate, authorizeAdmin, uploadClient.single('fotoPerfil'), handleMulterError, actualizarCliente);
+router.put(
+  "/:id",
+  authenticate,
+  authorizeAdmin,
+  uploadClient.single("fotoPerfil"),
+  handleMulterError,
+  actualizarCliente
+);
 
 /**
  * @swagger
@@ -495,9 +509,9 @@ router.put("/:id", authenticate, authorizeAdmin, uploadClient.single('fotoPerfil
  *               $ref: '#/components/schemas/ErrorResponse'
  *             example:
  *               success: false
- *               message: No se puede eliminar el cliente porque tiene registros relacionados
- *       500:
- *         $ref: '#/components/responses/InternalServerError'
+               message: No se puede eliminar el cliente porque tiene registros relacionados
+       500:
+         $ref: '#/components/responses/InternalServerError'
  */
 router.delete("/:id", authenticate, authorizeAdmin, eliminarCliente);
 
