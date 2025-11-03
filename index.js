@@ -17,6 +17,7 @@ const nivelSuscripcionRoutes = require("./routes/nivelSuscripcionRoutes");
 const productoRoutes = require("./routes/productoRoutes");
 const mesaGrupoRoutes = require("./routes/mesaGrupoRoutes");
 const mesaRoutes = require("./routes/mesaRoutes");
+const cajaDiariaRoutes = require("./routes/cajaDiariaRoutes");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -52,6 +53,7 @@ app.use("/api/tipos-suscripcion", tipoSuscripcionRoutes);
 app.use("/api/niveles-suscripcion", nivelSuscripcionRoutes);
 app.use("/api/mesas", mesaRoutes);
 app.use("/api/mesas-grupo", mesaGrupoRoutes);
+app.use("/api/caja-diaria", cajaDiariaRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
