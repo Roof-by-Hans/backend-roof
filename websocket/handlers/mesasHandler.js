@@ -16,7 +16,7 @@ const { emitMesasConGrupos } = require('../emitters/mesasEmitter');
 const obtenerMesasConGrupos = async () => {
   try {
     const [rows] = await promisePool.execute(
-      `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, id_grupo, nombre_grupo
+      `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, id_grupo, nombre_grupo, posX, posY
          FROM vw_mesas_con_grupo
         ORDER BY nombre_mesa`
     );

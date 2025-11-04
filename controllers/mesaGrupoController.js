@@ -27,7 +27,7 @@ const respondError = (res, status, message, extra = {}) =>
 const emitirListaCompletaMesas = async () => {
   try {
     const [rows] = await promisePool.execute(
-      `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, id_grupo, nombre_grupo
+      `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, id_grupo, nombre_grupo, posX, posY
          FROM vw_mesas_con_grupo
         ORDER BY nombre_mesa`
     );
@@ -51,7 +51,7 @@ const cargarGrupoDetalle = async (idGrupo, connection = promisePool) => {
   }
 
   const [mesasRows] = await connection.execute(
-    `SELECT m.id_mesa, m.nombre, m.estado, m.id_cliente_actual
+    `SELECT m.id_mesa, m.nombre, m.estado, m.id_cliente_actual, m.posX, m.posY
        FROM Mesa m
        INNER JOIN MesaGrupo mg ON mg.id_mesa = m.id_mesa
       WHERE mg.id_grupo = ?
@@ -82,7 +82,7 @@ const listarGruposConMesas = async (req, res) => {
     const placeholders = grupoIds.map(() => "?").join(", ");
 
     const [mesasRows] = await promisePool.execute(
-      `SELECT mg.id_grupo, m.id_mesa, m.nombre, m.estado, m.id_cliente_actual
+      `SELECT mg.id_grupo, m.id_mesa, m.nombre, m.estado, m.id_cliente_actual, m.posX, m.posY
          FROM MesaGrupo mg
          INNER JOIN Mesa m ON m.id_mesa = mg.id_mesa
         WHERE mg.id_grupo IN (${placeholders})

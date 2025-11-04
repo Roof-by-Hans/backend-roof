@@ -19,6 +19,8 @@ const mapMesaConGrupoRow = (row = {}) => {
     nombreMesa: normalizeNombre(row.nombre_mesa ?? row.nombre),
     estado: row.estado_mesa || row.estado || 'DISPONIBLE',
     idClienteActual: row.id_cliente_actual || null,
+    posX: row.posX !== undefined ? row.posX : 50,
+    posY: row.posY !== undefined ? row.posY : 50,
     grupo,
   };
 };
@@ -43,6 +45,8 @@ const mapMesaRow = (row = {}) => {
     nombre: normalizeNombre(row.nombre ?? row.nombre_mesa),
     estado: row.estado || 'DISPONIBLE',
     idClienteActual: row.id_cliente_actual || null,
+    posX: row.posX !== undefined ? row.posX : 50,
+    posY: row.posY !== undefined ? row.posY : 50,
   };
 };
 

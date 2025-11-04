@@ -51,7 +51,7 @@ const validarNombreUnico = async (nombre, idExcluir = null) => {
 
 const obtenerMesaConGrupo = async (idMesa) => {
   const [rows] = await promisePool.execute(
-    `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, id_grupo, nombre_grupo
+    `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, posX, posY, id_grupo, nombre_grupo
        FROM vw_mesas_con_grupo
       WHERE id_mesa = ?`,
     [idMesa]
@@ -67,7 +67,7 @@ const obtenerMesaConGrupo = async (idMesa) => {
 const listarMesas = async (req, res) => {
   try {
     const [rows] = await promisePool.execute(
-      `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, id_grupo, nombre_grupo
+      `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual, posX, posY, id_grupo, nombre_grupo
          FROM vw_mesas_con_grupo
         ORDER BY nombre_mesa`
     );
@@ -478,6 +478,75 @@ const obtenerEstadisticasMesas = async (req, res) => {
   }
 };
 
+/**
+ * Actualizar posición de una mesa
+ */
+const actualizarPosicionMesa = async (req, res) => {
+  try {
+    const idMesa = sanitizeId(req.params.id);
+    const { posX, posY } = req.body || {};
+
+    if (!idMesa) {
+      return respondError(res, 400, "El identificador de la mesa no es válido");
+    }
+
+    // Validar que posX y posY existan y sean números
+    if (posX === undefined || posY === undefined) {
+      return respondError(res, 400, "Se requieren posX y posY");
+    }
+
+    if (typeof posX !== 'number' || typeof posY !== 'number') {
+      return respondError(res, 400, "posX y posY deben ser números");
+    }
+
+    // Verificar que la mesa existe
+    const [mesaExiste] = await promisePool.execute(
+      'SELECT id_mesa FROM Mesa WHERE id_mesa = ?',
+      [idMesa]
+    );
+
+    if (mesaExiste.length === 0) {
+      return respondError(res, 404, "Mesa no encontrada");
+    }
+
+    // Actualizar posición
+    await promisePool.execute(
+      'UPDATE Mesa SET posX = ?, posY = ? WHERE id_mesa = ?',
+      [posX, posY, idMesa]
+    );
+
+    // Obtener mesa actualizada
+    const mesa = await obtenerMesaConGrupo(idMesa);
+
+    // Emitir evento WebSocket
+    const io = req.app.get('io');
+    if (io) {
+      io.to('mesas').emit('mesa:posicion-actualizada', {
+        message: 'Posición de mesa actualizada',
+        data: {
+          idMesa,
+          posX,
+          posY,
+          mesa
+        },
+        timestamp: new Date()
+      });
+      console.log(`📍 Evento mesa:posicion-actualizada emitido para mesa ${idMesa}`);
+    }
+
+    res.json({
+      success: true,
+      message: "Posición actualizada correctamente",
+      data: { idMesa, posX, posY, mesa },
+    });
+  } catch (error) {
+    console.error("Error al actualizar posición de mesa:", error);
+    return respondError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   listarMesas,
   obtenerMesa,
@@ -488,4 +557,5 @@ module.exports = {
   ocuparMesa,
   liberarMesa,
   obtenerEstadisticasMesas,
+  actualizarPosicionMesa,
 };

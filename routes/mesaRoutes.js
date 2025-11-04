@@ -9,6 +9,7 @@ const {
   ocuparMesa,
   liberarMesa,
   obtenerEstadisticasMesas,
+  actualizarPosicionMesa,
 } = require("../controllers/mesaController");
 const { authenticate } = require("../middlewares/authMiddleware");
 
@@ -395,5 +396,75 @@ router.post("/:id/ocupar", authenticate, ocuparMesa);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.post("/:id/liberar", authenticate, liberarMesa);
+
+/**
+ * @swagger
+ * /api/mesas/{id}/posicion:
+ *   patch:
+ *     summary: Actualizar posición de una mesa en el canvas
+ *     description: Actualiza las coordenadas X e Y de una mesa y emite evento WebSocket
+ *     tags: [Mesas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la mesa
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - posX
+ *               - posY
+ *             properties:
+ *               posX:
+ *                 type: number
+ *                 description: Coordenada X en el canvas
+ *                 example: 150.5
+ *               posY:
+ *                 type: number
+ *                 description: Coordenada Y en el canvas
+ *                 example: 200.3
+ *     responses:
+ *       200:
+ *         description: Posición actualizada correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Posición actualizada correctamente"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     idMesa:
+ *                       type: integer
+ *                     posX:
+ *                       type: number
+ *                     posY:
+ *                       type: number
+ *                     mesa:
+ *                       $ref: '#/components/schemas/Mesa'
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/:id/posicion", authenticate, actualizarPosicionMesa);
 
 module.exports = router;
