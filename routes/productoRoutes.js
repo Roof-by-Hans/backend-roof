@@ -7,6 +7,7 @@ const {
   eliminarProducto,
 } = require("../controllers/productoController");
 const { authenticate } = require("../middlewares/authMiddleware");
+const { uploadProduct, handleMulterError } = require("../config/multer");
 
 const router = express.Router();
 
@@ -48,8 +49,13 @@ const router = express.Router();
  *           example: 5
  *         fotoPrincipal:
  *           type: string
- *           description: URL de la foto principal del producto
- *           example: "https://example.com/productos/whisky-macallan.jpg"
+ *           description: Nombre del archivo de la foto principal del producto
+ *           example: "producto-1635123456789-123456789.jpg"
+ *           nullable: true
+ *         fotoPrincipalUrl:
+ *           type: string
+ *           description: URL completa para acceder a la foto principal del producto
+ *           example: "http://localhost:3000/uploads/productos/producto-1635123456789-123456789.jpg"
  *           nullable: true
  *         descripcion:
  *           type: string
@@ -223,12 +229,42 @@ router.get("/:id", authenticate, getProductoPorId);
  * @swagger
  * /api/productos:
  *   post:
- *     summary: Crear un nuevo producto
+ *     summary: Crear un nuevo producto con imagen
  *     tags: [Productos]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
- *       $ref: '#/components/requestBodies/CrearProducto'
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nombre
+ *               - precio_unitario
+ *               - id_categoria
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 description: Nombre del producto
+ *                 example: "Whisky Lagavulin 16"
+ *               precio_unitario:
+ *                 type: number
+ *                 format: double
+ *                 description: Precio unitario del producto
+ *                 example: 189.99
+ *               id_categoria:
+ *                 type: integer
+ *                 description: ID de la categoría del producto
+ *                 example: 5
+ *               descripcion:
+ *                 type: string
+ *                 description: Descripción del producto (opcional)
+ *                 example: "Whisky escocés de Islay con intenso sabor ahumado"
+ *               imagen:
+ *                 type: string
+ *                 format: binary
+ *                 description: Imagen del producto (máx. 5MB, solo imágenes)
  *     responses:
  *       201:
  *         description: Producto creado correctamente
@@ -244,7 +280,9 @@ router.get("/:id", authenticate, getProductoPorId);
  *                 data:
  *                   $ref: '#/components/schemas/Producto'
  *       400:
- *         $ref: '#/components/responses/BadRequestError'
+ *         oneOf:
+ *           - $ref: '#/components/responses/BadRequestError'
+ *           - $ref: '#/components/responses/FileUploadError'
  *       401:
  *         $ref: '#/components/responses/UnauthorizedError'
  *       403:
@@ -254,20 +292,46 @@ router.get("/:id", authenticate, getProductoPorId);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.post("/", authenticate, crearProducto);
+router.post("/", authenticate, uploadProduct.single('imagen'), handleMulterError, crearProducto);
 
 /**
  * @swagger
  * /api/productos/{id}:
  *   put:
- *     summary: Actualizar los datos de un producto
+ *     summary: Actualizar los datos de un producto con imagen
  *     tags: [Productos]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - $ref: '#/components/parameters/ProductoId'
  *     requestBody:
- *       $ref: '#/components/requestBodies/ActualizarProducto'
+ *       required: false
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 description: Nuevo nombre del producto (opcional)
+ *                 example: "Whisky Lagavulin 16 Edición Especial"
+ *               precio_unitario:
+ *                 type: number
+ *                 format: double
+ *                 description: Nuevo precio unitario (opcional)
+ *                 example: 199.99
+ *               id_categoria:
+ *                 type: integer
+ *                 description: Nueva categoría del producto (opcional)
+ *                 example: 5
+ *               descripcion:
+ *                 type: string
+ *                 description: Nueva descripción del producto (opcional)
+ *                 example: "Whisky escocés premium con notas ahumadas intensas"
+ *               imagen:
+ *                 type: string
+ *                 format: binary
+ *                 description: Nueva imagen del producto (opcional, máx. 5MB)
  *     responses:
  *       200:
  *         description: Producto actualizado correctamente
@@ -293,7 +357,7 @@ router.post("/", authenticate, crearProducto);
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.put("/:id", authenticate, actualizarProducto);
+router.put("/:id", authenticate, uploadProduct.single('imagen'), handleMulterError, actualizarProducto);
 
 /**
  * @swagger

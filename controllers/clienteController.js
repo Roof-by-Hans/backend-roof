@@ -1,6 +1,8 @@
 const bcrypt = require("bcrypt");
+const path = require("path");
 const { promisePool } = require("../config/database");
 const { mapClienteRow, mapClientesRows } = require("../helpers/clienteMapper");
+const { deleteFile, getFileUrl } = require("../config/multer");
 
 const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
 
@@ -31,9 +33,17 @@ const getClientes = async (req, res) => {
        ORDER BY c.id_cliente`
     );
 
+    // Agregar URL completa de las imágenes de perfil
+    const clientesConImagenes = mapClientesRows(rows).map(cliente => {
+      if (cliente.fotoPerfil) {
+        cliente.fotoPerfilUrl = getFileUrl(req, cliente.fotoPerfil, 'clientes');
+      }
+      return cliente;
+    });
+
     res.json({
       success: true,
-      data: mapClientesRows(rows),
+      data: clientesConImagenes,
       message: "Clientes obtenidos correctamente",
     });
   } catch (error) {
@@ -76,9 +86,14 @@ const getClientePorId = async (req, res) => {
       });
     }
 
+    const clienteMapeado = mapClienteRow(rows[0]);
+    if (clienteMapeado.fotoPerfil) {
+      clienteMapeado.fotoPerfilUrl = getFileUrl(req, clienteMapeado.fotoPerfil, 'clientes');
+    }
+
     res.json({
       success: true,
-      data: mapClienteRow(rows[0]),
+      data: clienteMapeado,
       message: "Cliente obtenido correctamente",
     });
   } catch (error) {
@@ -96,11 +111,20 @@ const getClientePorId = async (req, res) => {
  */
 const crearCliente = async (req, res) => {
   try {
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta, fotoPerfil, preferencias } =
-      req.body;
+    const { nombre, apellido, telefono, email, contrasena, idTarjeta, preferencias } = req.body;
+    const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
+
+    // Función auxiliar para eliminar imagen si hay error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
 
     // Validaciones básicas
     if (!nombre || !apellido) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "Los campos nombre y apellido son obligatorios",
@@ -108,6 +132,7 @@ const crearCliente = async (req, res) => {
     }
 
     if (!email) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El campo email es obligatorio",
@@ -115,6 +140,7 @@ const crearCliente = async (req, res) => {
     }
 
     if (!contrasena) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El campo contrasena es obligatorio",
@@ -124,6 +150,7 @@ const crearCliente = async (req, res) => {
     // Validar formato de email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El formato del email es inválido",
@@ -137,6 +164,7 @@ const crearCliente = async (req, res) => {
     );
 
     if (emailExistente.length > 0) {
+      await eliminarImagenSubida();
       return res.status(409).json({
         success: false,
         message: "El email ya está registrado",
@@ -151,6 +179,7 @@ const crearCliente = async (req, res) => {
       );
 
       if (tarjeta.length === 0) {
+        await eliminarImagenSubida();
         return res.status(404).json({
           success: false,
           message: "La tarjeta especificada no existe",
@@ -177,12 +206,22 @@ const crearCliente = async (req, res) => {
       preferencias: preferencias || null,
     });
 
+    if (nuevoCliente.fotoPerfil) {
+      nuevoCliente.fotoPerfilUrl = getFileUrl(req, nuevoCliente.fotoPerfil, 'clientes');
+    }
+
     res.status(201).json({
       success: true,
       data: nuevoCliente,
       message: "Cliente creado correctamente",
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al crear cliente:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
@@ -206,14 +245,41 @@ const crearCliente = async (req, res) => {
 const actualizarCliente = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta, fotoPerfil, preferencias } =
-      req.body;
+    const { nombre, apellido, telefono, email, contrasena, idTarjeta, preferencias } = req.body;
+
+    // Obtener el cliente existente para manejar la imagen anterior
+    const [clienteExistente] = await promisePool.execute(
+      "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+      [id]
+    );
+
+    if (clienteExistente.length === 0) {
+      // Si se subió una imagen, eliminarla porque el cliente no existe
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+      
+      return res.status(404).json({
+        success: false,
+        message: "Cliente no encontrado",
+      });
+    }
+
+    // Función auxiliar para eliminar imagen subida en caso de error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
 
     const campos = [];
     const valores = [];
 
     if (nombre !== undefined) {
       if (!nombre.trim()) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El nombre no puede estar vacío",
@@ -225,6 +291,7 @@ const actualizarCliente = async (req, res) => {
 
     if (apellido !== undefined) {
       if (!apellido.trim()) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El apellido no puede estar vacío",
@@ -242,6 +309,7 @@ const actualizarCliente = async (req, res) => {
     if (email !== undefined) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El formato del email es inválido",
@@ -255,6 +323,7 @@ const actualizarCliente = async (req, res) => {
       );
 
       if (emailExistente.length > 0) {
+        await eliminarImagenSubida();
         return res.status(409).json({
           success: false,
           message: "El email ya está registrado por otro cliente",
@@ -265,13 +334,7 @@ const actualizarCliente = async (req, res) => {
       valores.push(email);
     }
 
-    if (contrasena !== undefined) {
-      if (!contrasena) {
-        return res.status(400).json({
-          success: false,
-          message: "La contraseña no puede estar vacía",
-        });
-      }
+    if (contrasena !== undefined && contrasena !== null && contrasena !== "") {
       const hashedPassword = await hashPassword(contrasena);
       campos.push("contrasena = ?");
       valores.push(hashedPassword);
@@ -285,6 +348,7 @@ const actualizarCliente = async (req, res) => {
         );
 
         if (tarjeta.length === 0) {
+          await eliminarImagenSubida();
           return res.status(404).json({
             success: false,
             message: "La tarjeta especificada no existe",
@@ -295,17 +359,32 @@ const actualizarCliente = async (req, res) => {
       valores.push(idTarjeta);
     }
 
-    if (fotoPerfil !== undefined) {
+    // Manejar nueva imagen si se subió
+    if (req.file) {
+      // Si hay una imagen anterior, eliminarla
+      if (clienteExistente[0].foto_perfil) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'clientes', clienteExistente[0].foto_perfil);
+        await deleteFile(rutaImagenAnterior);
+      }
+      
       campos.push("foto_perfil = ?");
-      valores.push(fotoPerfil || null);
+      valores.push(req.file.filename);
+    } else if (req.body.eliminarFotoPerfil === "true" || req.body.eliminarFotoPerfil === true) {
+      // Si se solicita eliminar la foto de perfil y no se subió una nueva
+      if (clienteExistente[0].foto_perfil) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'clientes', clienteExistente[0].foto_perfil);
+        await deleteFile(rutaImagenAnterior);
+      }
+      campos.push("foto_perfil = ?");
+      valores.push(null);
     }
-
     if (preferencias !== undefined) {
       campos.push("preferencias = ?");
       valores.push(preferencias || null);
     }
 
     if (campos.length === 0) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "Debe enviar al menos un campo para actualizar",
@@ -342,12 +421,23 @@ const actualizarCliente = async (req, res) => {
       [id]
     );
 
+    const clienteActualizado = mapClienteRow(rows[0]);
+    if (clienteActualizado.fotoPerfil) {
+      clienteActualizado.fotoPerfilUrl = getFileUrl(req, clienteActualizado.fotoPerfil, 'clientes');
+    }
+
     res.json({
       success: true,
-      data: mapClienteRow(rows[0]),
+      data: clienteActualizado,
       message: "Cliente actualizado correctamente",
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al actualizar cliente:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
@@ -372,6 +462,19 @@ const eliminarCliente = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Obtener la imagen del cliente antes de eliminarlo
+    const [clienteAEliminar] = await promisePool.execute(
+      "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+      [id]
+    );
+
+    if (clienteAEliminar.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Cliente no encontrado",
+      });
+    }
+
     const [result] = await promisePool.execute(
       "DELETE FROM Cliente WHERE id_cliente = ?",
       [id]
@@ -382,6 +485,12 @@ const eliminarCliente = async (req, res) => {
         success: false,
         message: "Cliente no encontrado",
       });
+    }
+
+    // Eliminar la imagen asociada si existe
+    if (clienteAEliminar[0].foto_perfil) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', clienteAEliminar[0].foto_perfil);
+      await deleteFile(rutaImagen);
     }
 
     res.json({
