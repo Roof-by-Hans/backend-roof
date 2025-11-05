@@ -5,7 +5,6 @@ const {
   mapMesaConGrupoRows,
 } = require("../models/mesaGrupoModel");
 const {
-  emitMesasActualizadas,
   emitGrupoCreado,
   emitGrupoDisuelto,
   emitMesasUnidas,

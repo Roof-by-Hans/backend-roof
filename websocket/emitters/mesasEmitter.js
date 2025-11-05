@@ -136,7 +136,7 @@ const emitMesasConGrupos = (mesas) => {
     const payload = {
       message: `Lista de ${mesas.length} mesa(s) con información de grupos`,
       data: mesas,
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
 
     io.to('mesas').emit('mesas:lista-completa', payload);
@@ -194,7 +194,7 @@ const emitGrupoCreado = (grupo) => {
     const payload = {
       message: `Grupo "${grupo.nombre}" creado con ${grupo.mesas.length} mesa(s)`,
       data: grupo,
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
 
     io.to('mesas').emit('grupo:creado', payload);
@@ -218,7 +218,7 @@ const emitGrupoDisuelto = (idGrupo, mesasLiberadas = []) => {
         idGrupo,
         mesasLiberadas
       },
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
 
     io.to('mesas').emit('grupo:disuelto', payload);
@@ -242,7 +242,7 @@ const emitMesasUnidas = (data) => {
         nombreGrupo: data.nombreGrupo,
         mesasUnidas: data.mesasUnidas
       },
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
 
     io.to('mesas').emit('mesas:unidas', payload);
@@ -265,7 +265,7 @@ const emitMesasSeparadas = (data) => {
         idGrupo: data.idGrupo,
         mesasSeparadas: data.mesasSeparadas
       },
-      timestamp: new Date()
+      timestamp: new Date().toISOString()
     };
 
     io.to('mesas').emit('mesas:separadas', payload);

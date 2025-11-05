@@ -8,7 +8,6 @@
 
 const { promisePool } = require('../../config/database');
 const { mapMesaConGrupoRows } = require('../../models/mesaGrupoModel');
-const { emitMesasConGrupos } = require('../emitters/mesasEmitter');
 
 /**
  * Obtener todas las mesas con información de grupos

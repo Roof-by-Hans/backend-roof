@@ -529,7 +529,7 @@ const actualizarPosicionMesa = async (req, res) => {
           posY,
           mesa
         },
-        timestamp: new Date()
+        timestamp: new Date().toISOString()
       });
       console.log(`📍 Evento mesa:posicion-actualizada emitido para mesa ${idMesa}`);
     }
