@@ -94,7 +94,7 @@ const emitMesaEstadoCambiado = (idMesa, estadoData) => {
         id: idMesa,           // Number: ID de la mesa
         estado: estadoData.estado  // String: Estado en MAYÚSCULAS
       },
-      timestamp: new Date()   // Date object para el frontend
+      timestamp: new Date().toISOString()   // ISO string para el frontend
     };
     
     // Emitir a la sala general de mesas
