@@ -1,6 +1,6 @@
 const { promisePool } = require("../config/database");
 const { mapTarjetaRow, mapTarjetasRows } = require("../helpers/tarjetaMapper");
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require("uuid");
 
 /**
  * Obtener todas las tarjetas
@@ -81,18 +81,12 @@ const getTarjetaPorId = async (req, res) => {
   }
 };
 
-
-
 /**
  * Crear una nueva tarjeta
  */
 const crearTarjeta = async (req, res) => {
   try {
-    const {
-      idTipoSuscripcion,
-      idNivelSuscripcion,
-      saldoActual,
-    } = req.body;
+    const { idTipoSuscripcion, idNivelSuscripcion, saldoActual } = req.body;
 
     // Generar UUID v4 automáticamente para la tarjeta física
     // Este UUID será único e irrepetible para cada tarjeta
@@ -134,8 +128,9 @@ const crearTarjeta = async (req, res) => {
     }
 
     // Validar saldo actual (debe ser un número válido)
-    const saldoFinal = saldoActual !== undefined ? parseFloat(saldoActual) : 0.00;
-    
+    const saldoFinal =
+      saldoActual !== undefined ? parseFloat(saldoActual) : 0.0;
+
     if (isNaN(saldoFinal) || saldoFinal < 0) {
       return res.status(400).json({
         success: false,
@@ -309,10 +304,7 @@ const eliminarTarjeta = async (req, res) => {
       });
     }
 
-    await promisePool.execute(
-      `DELETE FROM Tarjeta WHERE id_tarjeta = ?`,
-      [id]
-    );
+    await promisePool.execute(`DELETE FROM Tarjeta WHERE id_tarjeta = ?`, [id]);
 
     res.json({
       success: true,
@@ -413,7 +405,9 @@ const actualizarSaldo = async (req, res) => {
     res.json({
       success: true,
       data: mapTarjetaRow(tarjetaActualizada[0]),
-      message: `Saldo ${operacion === "agregar" ? "agregado" : "restado"} exitosamente`,
+      message: `Saldo ${
+        operacion === "agregar" ? "agregado" : "restado"
+      } exitosamente`,
     });
   } catch (error) {
     console.error("Error al actualizar saldo:", error);
@@ -487,6 +481,450 @@ const regenerarUUID = async (req, res) => {
   }
 };
 
+/**
+ * Asociar tarjeta RFID a un cliente
+ * POST /api/tarjetas/asociar
+ */
+const asociarTarjetaCliente = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const {
+      idCliente,
+      rfidUid,
+      idTipoSuscripcion,
+      idNivelSuscripcion,
+      saldoInicial,
+      forzarDesvinculacion,
+    } = req.body;
+
+    // 1. Validaciones de entrada
+    if (!idCliente || !rfidUid || !idTipoSuscripcion) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message:
+          "Los campos idCliente, rfidUid e idTipoSuscripcion son obligatorios",
+      });
+    }
+
+    // 2. Verificar que el cliente existe
+    const [clienteRows] = await connection.execute(
+      `SELECT id_cliente, id_tarjeta, nombre, apellido FROM Cliente WHERE id_cliente = ?`,
+      [idCliente]
+    );
+
+    if (clienteRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Cliente no encontrado",
+      });
+    }
+
+    const cliente = clienteRows[0];
+
+    // 3. Verificar primero si la tarjeta escaneada es la que ya tiene el cliente
+    const uidNormalizadoPrevio = String(rfidUid).toUpperCase().trim();
+    let esLaMismaTarjeta = false;
+
+    if (cliente.id_tarjeta !== null) {
+      // Obtener UUID de la tarjeta actual del cliente
+      const [tarjetaActualRows] = await connection.execute(
+        `SELECT t.id_tarjeta, t.uuid, ts.nombre AS tipo_suscripcion, ns.nombre AS nivel_suscripcion
+         FROM Tarjeta t
+         LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+         LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+         WHERE t.id_tarjeta = ?`,
+        [cliente.id_tarjeta]
+      );
+
+      console.log(`[ASOCIAR] Comparando UUIDs:`, {
+        tarjetaActualCliente: tarjetaActualRows[0]?.uuid,
+        uidEscaneado: uidNormalizadoPrevio,
+        sonIguales: tarjetaActualRows[0]?.uuid === uidNormalizadoPrevio,
+      });
+
+      if (
+        tarjetaActualRows.length > 0 &&
+        tarjetaActualRows[0].uuid === uidNormalizadoPrevio
+      ) {
+        // Es la misma tarjeta! Solo necesitamos actualizarla, no desvincular
+        esLaMismaTarjeta = true;
+        console.log(
+          `[ASOCIAR] Cliente ${idCliente} está actualizando su propia tarjeta ${cliente.id_tarjeta}`
+        );
+      } else {
+        // Es una tarjeta DIFERENTE
+        if (!forzarDesvinculacion) {
+          await connection.rollback();
+          return res.status(409).json({
+            success: false,
+            message: `El cliente ${cliente.nombre} ${cliente.apellido} ya tiene una tarjeta asociada`,
+            data: {
+              tarjetaActual: tarjetaActualRows[0]
+                ? {
+                    uuid: tarjetaActualRows[0].uuid,
+                    tipo: tarjetaActualRows[0].tipo_suscripcion,
+                    nivel: tarjetaActualRows[0].nivel_suscripcion,
+                  }
+                : null,
+            },
+          });
+        }
+
+        // Desvincular la tarjeta anterior (diferente) del cliente
+        console.log(
+          `[ASOCIAR] Desvinculando tarjeta anterior ${cliente.id_tarjeta} del cliente ${idCliente}`
+        );
+        await connection.execute(
+          `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
+          [idCliente]
+        );
+      }
+    }
+
+    // 3b. Variable para tracking
+    let tarjetaAnteriorCliente =
+      !esLaMismaTarjeta && cliente.id_tarjeta !== null
+        ? cliente.id_tarjeta
+        : null;
+
+    // 4. Verificar que el tipo de suscripción existe
+    const [tipoRows] = await connection.execute(
+      `SELECT id_tipo, nombre FROM TipoSuscripcion WHERE id_tipo = ?`,
+      [idTipoSuscripcion]
+    );
+
+    if (tipoRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Tipo de suscripción no encontrado",
+      });
+    }
+
+    const tipoSuscripcion = tipoRows[0];
+
+    // 5. Validar nivel de suscripción según el tipo
+    if (tipoSuscripcion.nombre === "CREDITO") {
+      // Para CREDITO, el nivel es obligatorio
+      if (!idNivelSuscripcion) {
+        await connection.rollback();
+        return res.status(400).json({
+          success: false,
+          message:
+            "El nivel de suscripción es obligatorio para tarjetas de CREDITO",
+        });
+      }
+
+      const [nivelRows] = await connection.execute(
+        `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
+        [idNivelSuscripcion]
+      );
+
+      if (nivelRows.length === 0) {
+        await connection.rollback();
+        return res.status(404).json({
+          success: false,
+          message: "Nivel de suscripción no encontrado",
+        });
+      }
+    }
+
+    // 6. Buscar si ya existe una tarjeta física con ese UID
+    const uidNormalizado = String(rfidUid).toUpperCase().trim();
+    const [tarjetaExistenteRows] = await connection.execute(
+      `SELECT t.id_tarjeta, c.id_cliente, c.nombre, c.apellido 
+       FROM Tarjeta t
+       LEFT JOIN Cliente c ON c.id_tarjeta = t.id_tarjeta
+       WHERE t.uuid = ?`,
+      [uidNormalizado]
+    );
+
+    let idTarjeta;
+    let tarjetaYaExistia = false;
+    let tarjetaEstabaAsociada = false;
+    let idClienteAnteriorTarjeta = null;
+
+    if (tarjetaExistenteRows.length > 0) {
+      const tarjetaExistente = tarjetaExistenteRows[0];
+      tarjetaYaExistia = true;
+
+      // Verificar si la tarjeta ya está asociada a algún cliente
+      if (tarjetaExistente.id_cliente !== null) {
+        tarjetaEstabaAsociada = true;
+        idClienteAnteriorTarjeta = tarjetaExistente.id_cliente;
+
+        // Si es la misma tarjeta del mismo cliente, requiere confirmación igual
+        if (
+          esLaMismaTarjeta &&
+          tarjetaExistente.id_cliente === parseInt(idCliente)
+        ) {
+          console.log(
+            `[ASOCIAR] Mismo cliente actualizando su propia tarjeta - requiere confirmación`
+          );
+
+          if (!forzarDesvinculacion) {
+            await connection.rollback();
+            return res.status(409).json({
+              success: false,
+              message: `Esta tarjeta ya pertenece a este cliente. Se resetearán todos los datos de la tarjeta.`,
+              data: {
+                clienteActual: {
+                  id: tarjetaExistente.id_cliente,
+                  nombre: tarjetaExistente.nombre,
+                  apellido: tarjetaExistente.apellido,
+                },
+                esMismoCliente: true,
+              },
+            });
+          }
+          // Si se confirma, continuar con la actualización
+        } else {
+          // Es otro cliente diferente
+          if (!forzarDesvinculacion) {
+            await connection.rollback();
+            return res.status(409).json({
+              success: false,
+              message: `Esta tarjeta ya está asociada al cliente ${tarjetaExistente.nombre} ${tarjetaExistente.apellido}`,
+              data: {
+                clienteActual: {
+                  id: tarjetaExistente.id_cliente,
+                  nombre: tarjetaExistente.nombre,
+                  apellido: tarjetaExistente.apellido,
+                },
+                esMismoCliente: false,
+              },
+            });
+          }
+
+          // Si se fuerza, desvincular del cliente anterior
+          await connection.execute(
+            `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
+            [tarjetaExistente.id_cliente]
+          );
+        }
+      }
+
+      // La tarjeta existe (ahora libre) → Actualizar tipo, nivel y saldo
+      idTarjeta = tarjetaExistente.id_tarjeta;
+
+      const saldoFinal =
+        tipoSuscripcion.nombre === "PREPAGA" && saldoInicial !== undefined
+          ? parseFloat(saldoInicial)
+          : 0.0;
+
+      console.log(`[ASOCIAR] Actualizando tarjeta existente ${idTarjeta}:`, {
+        tipo: tipoSuscripcion.nombre,
+        idTipoSuscripcion,
+        idNivelSuscripcion:
+          tipoSuscripcion.nombre === "CREDITO" ? idNivelSuscripcion : null,
+        saldoFinal,
+      });
+
+      await connection.execute(
+        `UPDATE Tarjeta 
+         SET id_tipo_suscripcion = ?, 
+             id_nivel_suscripcion = ?,
+             saldo_actual = ?
+         WHERE id_tarjeta = ?`,
+        [
+          idTipoSuscripcion,
+          tipoSuscripcion.nombre === "CREDITO" ? idNivelSuscripcion : null,
+          saldoFinal,
+          idTarjeta,
+        ]
+      );
+    } else {
+      // La tarjeta NO existe → Crear nueva
+      const saldoFinal =
+        tipoSuscripcion.nombre === "PREPAGA" && saldoInicial !== undefined
+          ? parseFloat(saldoInicial)
+          : 0.0;
+
+      const [insertResult] = await connection.execute(
+        `INSERT INTO Tarjeta (uuid, id_tipo_suscripcion, id_nivel_suscripcion, saldo_actual)
+         VALUES (?, ?, ?, ?)`,
+        [
+          uidNormalizado,
+          idTipoSuscripcion,
+          tipoSuscripcion.nombre === "CREDITO" ? idNivelSuscripcion : null,
+          saldoFinal,
+        ]
+      );
+      idTarjeta = insertResult.insertId;
+    }
+
+    // 7. Asociar la tarjeta al cliente
+    // Siempre vincular, excepto si es la misma tarjeta Y no se desvinculó antes
+    const necesitaVincular =
+      !esLaMismaTarjeta || tarjetaAnteriorCliente !== null;
+
+    console.log(`[ASOCIAR] Paso 7 - Vincular tarjeta:`, {
+      idTarjeta,
+      idCliente,
+      esLaMismaTarjeta,
+      tarjetaAnteriorCliente,
+      necesitaVincular,
+    });
+
+    if (necesitaVincular) {
+      console.log(
+        `[ASOCIAR] ✅ Vinculando tarjeta ${idTarjeta} al cliente ${idCliente}`
+      );
+      await connection.execute(
+        `UPDATE Cliente SET id_tarjeta = ? WHERE id_cliente = ?`,
+        [idTarjeta, idCliente]
+      );
+    } else {
+      console.log(
+        `[ASOCIAR] Tarjeta ${idTarjeta} ya estaba vinculada al cliente ${idCliente}, solo se actualizó`
+      );
+    }
+
+    // 8. Obtener datos completos de la tarjeta para retornar
+    const [tarjetaFinalRows] = await connection.execute(
+      `SELECT t.id_tarjeta,
+              t.uuid,
+              t.id_tipo_suscripcion,
+              ts.nombre AS nombre_tipo_suscripcion,
+              t.id_nivel_suscripcion,
+              ns.nombre AS nombre_nivel_suscripcion,
+              ns.limite_credito AS limite_credito_nivel,
+              t.saldo_actual
+       FROM Tarjeta t
+       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+       WHERE t.id_tarjeta = ?`,
+      [idTarjeta]
+    );
+
+    await connection.commit();
+
+    // Construir mensaje descriptivo
+    let mensaje = "";
+    if (esLaMismaTarjeta) {
+      mensaje = "Tipo de suscripción de la tarjeta actualizado exitosamente.";
+    } else {
+      if (tarjetaAnteriorCliente !== null) {
+        mensaje = "Tarjeta anterior del cliente desvinculada. ";
+      }
+      if (tarjetaYaExistia) {
+        mensaje += "Tarjeta escaneada actualizada y asociada al cliente.";
+      } else {
+        mensaje += "Nueva tarjeta creada y asociada al cliente.";
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        tarjeta: mapTarjetaRow(tarjetaFinalRows[0]),
+        cliente: {
+          id: cliente.id_cliente,
+          nombre: cliente.nombre,
+          apellido: cliente.apellido,
+        },
+        operaciones: {
+          clienteTeniaTrajetaAnterior: tarjetaAnteriorCliente !== null,
+          tarjetaEscaneadaYaExistia: tarjetaYaExistia,
+          seDesvinculoTarjetaAnteriorCliente: tarjetaAnteriorCliente !== null,
+          seDesvinculoTarjetaEscaneada: tarjetaEstabaAsociada,
+          idClienteAnteriorTarjeta,
+          esLaMismaTarjeta, // Indica si el cliente está actualizando su propia tarjeta
+        },
+      },
+      message: mensaje,
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Error al asociar tarjeta:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  } finally {
+    connection.release();
+  }
+};
+
+/**
+ * Verificar si un UID ya existe
+ * POST /api/tarjetas/verificar-uid
+ */
+const verificarUidExistente = async (req, res) => {
+  try {
+    const { rfidUid } = req.body;
+
+    if (!rfidUid) {
+      return res.status(400).json({
+        success: false,
+        message: "El campo rfidUid es obligatorio",
+      });
+    }
+
+    const uidNormalizado = String(rfidUid).toUpperCase().trim();
+
+    const [tarjetaRows] = await promisePool.execute(
+      `SELECT t.id_tarjeta,
+              t.uuid,
+              t.id_tipo_suscripcion,
+              ts.nombre AS nombre_tipo_suscripcion,
+              t.id_nivel_suscripcion,
+              ns.nombre AS nombre_nivel_suscripcion,
+              c.id_cliente,
+              c.nombre AS cliente_nombre,
+              c.apellido AS cliente_apellido
+       FROM Tarjeta t
+       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+       LEFT JOIN Cliente c ON c.id_tarjeta = t.id_tarjeta
+       WHERE t.uuid = ?`,
+      [uidNormalizado]
+    );
+
+    if (tarjetaRows.length === 0) {
+      return res.json({
+        success: true,
+        existe: false,
+        message: "UID disponible para nueva tarjeta",
+      });
+    }
+
+    const tarjeta = tarjetaRows[0];
+
+    res.json({
+      success: true,
+      existe: true,
+      data: {
+        idTarjeta: tarjeta.id_tarjeta,
+        uuid: tarjeta.uuid,
+        tipoSuscripcion: tarjeta.nombre_tipo_suscripcion,
+        nivelSuscripcion: tarjeta.nombre_nivel_suscripcion,
+        asociadaACliente: tarjeta.id_cliente !== null,
+        cliente: tarjeta.id_cliente
+          ? {
+              id: tarjeta.id_cliente,
+              nombre: tarjeta.cliente_nombre,
+              apellido: tarjeta.cliente_apellido,
+            }
+          : null,
+      },
+      message: "Tarjeta con este UID ya existe en el sistema",
+    });
+  } catch (error) {
+    console.error("Error al verificar UID:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getTarjetas,
   getTarjetaPorId,
@@ -495,4 +933,6 @@ module.exports = {
   eliminarTarjeta,
   actualizarSaldo,
   regenerarUUID,
+  asociarTarjetaCliente,
+  verificarUidExistente,
 };

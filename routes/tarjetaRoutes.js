@@ -8,6 +8,8 @@ const {
   eliminarTarjeta,
   actualizarSaldo,
   regenerarUUID,
+  asociarTarjetaCliente,
+  verificarUidExistente,
 } = require("../controllers/tarjetaController");
 const {
   authenticate,
@@ -640,6 +642,150 @@ router.delete("/:id", authenticate, authorizeAdmin, eliminarTarjeta);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.patch("/:id/regenerar-uuid", authenticate, authorizeAdmin, regenerarUUID);
+router.patch(
+  "/:id/regenerar-uuid",
+  authenticate,
+  authorizeAdmin,
+  regenerarUUID
+);
+
+/**
+ * @swagger
+ * /api/tarjetas/verificar-uid:
+ *   post:
+ *     summary: Verificar si un UID de RFID ya existe en el sistema
+ *     tags: [Tarjetas]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - rfidUid
+ *             properties:
+ *               rfidUid:
+ *                 type: string
+ *                 description: UID de la tarjeta RFID a verificar
+ *                 example: "A1B2C3D4"
+ *     responses:
+ *       200:
+ *         description: Información sobre el UID verificado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 existe:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     idTarjeta:
+ *                       type: integer
+ *                     uuid:
+ *                       type: string
+ *                     tipoSuscripcion:
+ *                       type: string
+ *                     asociadaACliente:
+ *                       type: boolean
+ *                     cliente:
+ *                       type: object
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Campo rfidUid es obligatorio
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post(
+  "/verificar-uid",
+  authenticate,
+  authorizeAdmin,
+  verificarUidExistente
+);
+
+/**
+ * @swagger
+ * /api/tarjetas/asociar:
+ *   post:
+ *     summary: Asociar tarjeta RFID escaneada a un cliente
+ *     tags: [Tarjetas]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - idCliente
+ *               - rfidUid
+ *               - idTipoSuscripcion
+ *             properties:
+ *               idCliente:
+ *                 type: integer
+ *                 description: ID del cliente al que se asociará la tarjeta
+ *                 example: 1
+ *               rfidUid:
+ *                 type: string
+ *                 description: UID de la tarjeta RFID escaneada
+ *                 example: "A1B2C3D4"
+ *               idTipoSuscripcion:
+ *                 type: integer
+ *                 description: ID del tipo de suscripción (1=PREPAGA, 2=CREDITO)
+ *                 example: 1
+ *               idNivelSuscripcion:
+ *                 type: integer
+ *                 description: ID del nivel de suscripción (obligatorio si tipo=CREDITO)
+ *                 example: 1
+ *               saldoInicial:
+ *                 type: number
+ *                 format: float
+ *                 description: Saldo inicial (solo para PREPAGA)
+ *                 example: 1000.00
+ *     responses:
+ *       200:
+ *         description: Tarjeta asociada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     tarjeta:
+ *                       $ref: '#/components/schemas/Tarjeta'
+ *                     cliente:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                         nombre:
+ *                           type: string
+ *                         apellido:
+ *                           type: string
+ *                     tarjetaYaExistia:
+ *                       type: boolean
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Faltan campos obligatorios o validación fallida
+ *       404:
+ *         description: Cliente, tipo o nivel de suscripción no encontrado
+ *       409:
+ *         description: Cliente ya tiene tarjeta o tarjeta ya está asociada a otro cliente
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/asociar", authenticate, authorizeAdmin, asociarTarjetaCliente);
 
 module.exports = router;

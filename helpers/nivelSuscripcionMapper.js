@@ -12,7 +12,7 @@ const mapNivelSuscripcionRow = (row) => {
   return {
     id: row.id_nivel,
     nombre: row.nombre,
-    limite_credito: parseFloat(row.limite_credito),
+    limiteCredito: parseFloat(row.limite_credito),
   };
 };
 
