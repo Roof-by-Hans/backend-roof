@@ -1,10 +1,12 @@
 require("dotenv").config();
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
 const path = require("path");
 const swaggerUi = require("swagger-ui-express");
 const { swaggerSpec } = require("./config/swagger");
 const { testConnection } = require("./config/database");
+const { initializeWebSocket } = require("./config/websocket");
 const { handleMulterError } = require("./config/multer");
 const authRoutes = require("./routes/authRoutes");
 const authClienteRoutes = require("./routes/authClienteRoutes");
@@ -19,6 +21,7 @@ const mesaGrupoRoutes = require("./routes/mesaGrupoRoutes");
 const mesaRoutes = require("./routes/mesaRoutes");
 const cajaDiariaRoutes = require("./routes/cajaDiariaRoutes");
 const app = express();
+const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 app.use(
@@ -115,12 +118,20 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Inicializar WebSocket ANTES de iniciar el servidor
+const io = initializeWebSocket(server);
+
+// Hacer que io esté disponible en las rutas (middleware)
+app.set('io', io);
+console.log("🔌 WebSocket configurado y disponible en rutas");
+
 // Iniciar el servidor
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
   console.log(
     `📚 Documentación disponible en http://localhost:${PORT}/api-docs`
   );
+  
   await testConnection();
 });
 

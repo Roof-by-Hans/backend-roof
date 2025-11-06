@@ -4,6 +4,7 @@ const {
   crearGrupo,
   obtenerGrupo,
   disolverGrupo,
+  modificarMesasGrupo,
 } = require("../controllers/mesaGrupoController");
 const { authenticate } = require("../middlewares/authMiddleware");
 
@@ -253,5 +254,93 @@ router.get("/grupos/:id", authenticate, obtenerGrupo);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.delete("/grupos/:id", authenticate, disolverGrupo);
+
+/**
+ * @swagger
+ * /api/mesas-grupo/grupos/{id}/mesas:
+ *   patch:
+ *     summary: Agregar o remover mesas de un grupo existente
+ *     tags: [MesasGrupo]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID del grupo a modificar
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               agregar:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Array de IDs de mesas a agregar al grupo
+ *                 example: [4, 5]
+ *               remover:
+ *                 type: array
+ *                 items:
+ *                   type: integer
+ *                 description: Array de IDs de mesas a remover del grupo
+ *                 example: [1]
+ *           examples:
+ *             agregar:
+ *               summary: Agregar mesas
+ *               value:
+ *                 agregar: [4, 5, 6]
+ *             remover:
+ *               summary: Remover mesas
+ *               value:
+ *                 remover: [1, 2]
+ *             ambos:
+ *               summary: Agregar y remover simultáneamente
+ *               value:
+ *                 agregar: [7, 8]
+ *                 remover: [1]
+ *     responses:
+ *       200:
+ *         description: Grupo modificado correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Grupo modificado correctamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     grupo:
+ *                       $ref: '#/components/schemas/GrupoConMesas'
+ *                     mesasAgregadas:
+ *                       type: array
+ *                       items:
+ *                         type: integer
+ *                       example: [4, 5]
+ *                     mesasRemovidas:
+ *                       type: array
+ *                       items:
+ *                         type: integer
+ *                       example: [1]
+ *       400:
+ *         description: Datos inválidos o grupo quedaría vacío
+ *       404:
+ *         description: Grupo no encontrado o mesas no existen
+ *       409:
+ *         description: Mesas ya están en otro grupo
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/grupos/:id/mesas", authenticate, modificarMesasGrupo);
 
 module.exports = router;
