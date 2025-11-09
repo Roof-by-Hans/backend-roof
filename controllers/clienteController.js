@@ -34,9 +34,9 @@ const getClientes = async (req, res) => {
     );
 
     // Agregar URL completa de las imágenes de perfil
-    const clientesConImagenes = mapClientesRows(rows).map(cliente => {
+    const clientesConImagenes = mapClientesRows(rows).map((cliente) => {
       if (cliente.fotoPerfil) {
-        cliente.fotoPerfilUrl = getFileUrl(req, cliente.fotoPerfil, 'clientes');
+        cliente.fotoPerfilUrl = getFileUrl(req, cliente.fotoPerfil, "clientes");
       }
       return cliente;
     });
@@ -88,7 +88,11 @@ const getClientePorId = async (req, res) => {
 
     const clienteMapeado = mapClienteRow(rows[0]);
     if (clienteMapeado.fotoPerfil) {
-      clienteMapeado.fotoPerfilUrl = getFileUrl(req, clienteMapeado.fotoPerfil, 'clientes');
+      clienteMapeado.fotoPerfilUrl = getFileUrl(
+        req,
+        clienteMapeado.fotoPerfil,
+        "clientes"
+      );
     }
 
     res.json({
@@ -111,13 +115,27 @@ const getClientePorId = async (req, res) => {
  */
 const crearCliente = async (req, res) => {
   try {
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta, preferencias } = req.body;
+    const {
+      nombre,
+      apellido,
+      telefono,
+      email,
+      contrasena,
+      idTarjeta,
+      preferencias,
+    } = req.body;
     const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
 
     // Función auxiliar para eliminar imagen si hay error
     const eliminarImagenSubida = async () => {
       if (req.file) {
-        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        const rutaImagen = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "clientes",
+          req.file.filename
+        );
         await deleteFile(rutaImagen);
       }
     };
@@ -192,7 +210,16 @@ const crearCliente = async (req, res) => {
     const [result] = await promisePool.execute(
       `INSERT INTO Cliente (nombre, apellido, telefono, email, contrasena, id_tarjeta, foto_perfil, preferencias)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [nombre, apellido, telefono || null, email, hashedPassword, idTarjeta || null, fotoPerfil || null, preferencias || null]
+      [
+        nombre,
+        apellido,
+        telefono || null,
+        email,
+        hashedPassword,
+        idTarjeta || null,
+        fotoPerfil || null,
+        preferencias || null,
+      ]
     );
 
     const nuevoCliente = mapClienteRow({
@@ -207,7 +234,11 @@ const crearCliente = async (req, res) => {
     });
 
     if (nuevoCliente.fotoPerfil) {
-      nuevoCliente.fotoPerfilUrl = getFileUrl(req, nuevoCliente.fotoPerfil, 'clientes');
+      nuevoCliente.fotoPerfilUrl = getFileUrl(
+        req,
+        nuevoCliente.fotoPerfil,
+        "clientes"
+      );
     }
 
     res.status(201).json({
@@ -218,10 +249,16 @@ const crearCliente = async (req, res) => {
   } catch (error) {
     // Si hay un error general, eliminar la imagen subida
     if (req.file) {
-      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+      const rutaImagen = path.join(
+        __dirname,
+        "..",
+        "uploads",
+        "clientes",
+        req.file.filename
+      );
       await deleteFile(rutaImagen);
     }
-    
+
     console.error("Error al crear cliente:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
@@ -245,7 +282,15 @@ const crearCliente = async (req, res) => {
 const actualizarCliente = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, telefono, email, contrasena, idTarjeta, preferencias } = req.body;
+    const {
+      nombre,
+      apellido,
+      telefono,
+      email,
+      contrasena,
+      idTarjeta,
+      preferencias,
+    } = req.body;
 
     // Obtener el cliente existente para manejar la imagen anterior
     const [clienteExistente] = await promisePool.execute(
@@ -256,10 +301,16 @@ const actualizarCliente = async (req, res) => {
     if (clienteExistente.length === 0) {
       // Si se subió una imagen, eliminarla porque el cliente no existe
       if (req.file) {
-        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        const rutaImagen = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "clientes",
+          req.file.filename
+        );
         await deleteFile(rutaImagen);
       }
-      
+
       return res.status(404).json({
         success: false,
         message: "Cliente no encontrado",
@@ -269,7 +320,13 @@ const actualizarCliente = async (req, res) => {
     // Función auxiliar para eliminar imagen subida en caso de error
     const eliminarImagenSubida = async () => {
       if (req.file) {
-        const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+        const rutaImagen = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "clientes",
+          req.file.filename
+        );
         await deleteFile(rutaImagen);
       }
     };
@@ -363,16 +420,31 @@ const actualizarCliente = async (req, res) => {
     if (req.file) {
       // Si hay una imagen anterior, eliminarla
       if (clienteExistente[0].foto_perfil) {
-        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'clientes', clienteExistente[0].foto_perfil);
+        const rutaImagenAnterior = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "clientes",
+          clienteExistente[0].foto_perfil
+        );
         await deleteFile(rutaImagenAnterior);
       }
-      
+
       campos.push("foto_perfil = ?");
       valores.push(req.file.filename);
-    } else if (req.body.eliminarFotoPerfil === "true" || req.body.eliminarFotoPerfil === true) {
+    } else if (
+      req.body.eliminarFotoPerfil === "true" ||
+      req.body.eliminarFotoPerfil === true
+    ) {
       // Si se solicita eliminar la foto de perfil y no se subió una nueva
       if (clienteExistente[0].foto_perfil) {
-        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'clientes', clienteExistente[0].foto_perfil);
+        const rutaImagenAnterior = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "clientes",
+          clienteExistente[0].foto_perfil
+        );
         await deleteFile(rutaImagenAnterior);
       }
       campos.push("foto_perfil = ?");
@@ -423,7 +495,11 @@ const actualizarCliente = async (req, res) => {
 
     const clienteActualizado = mapClienteRow(rows[0]);
     if (clienteActualizado.fotoPerfil) {
-      clienteActualizado.fotoPerfilUrl = getFileUrl(req, clienteActualizado.fotoPerfil, 'clientes');
+      clienteActualizado.fotoPerfilUrl = getFileUrl(
+        req,
+        clienteActualizado.fotoPerfil,
+        "clientes"
+      );
     }
 
     res.json({
@@ -434,10 +510,16 @@ const actualizarCliente = async (req, res) => {
   } catch (error) {
     // Si hay un error general, eliminar la imagen subida
     if (req.file) {
-      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', req.file.filename);
+      const rutaImagen = path.join(
+        __dirname,
+        "..",
+        "uploads",
+        "clientes",
+        req.file.filename
+      );
       await deleteFile(rutaImagen);
     }
-    
+
     console.error("Error al actualizar cliente:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
@@ -452,6 +534,106 @@ const actualizarCliente = async (req, res) => {
       message: "Error interno del servidor",
       error: error.message,
     });
+  }
+};
+
+/**
+ * Desvincular la tarjeta asociada a un cliente
+ * PATCH /api/clientes/:id/desvincular-tarjeta
+ */
+const desvincularTarjetaCliente = async (req, res) => {
+  const connection = await promisePool.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const { id } = req.params;
+
+    const [clienteRows] = await connection.execute(
+      `SELECT c.id_cliente,
+              c.nombre,
+              c.apellido,
+              c.id_tarjeta,
+              t.uuid AS tarjeta_uuid,
+              t.id_tipo_suscripcion,
+              ts.nombre AS nombre_tipo_suscripcion,
+              t.id_nivel_suscripcion,
+              ns.nombre AS nombre_nivel_suscripcion,
+              t.saldo_actual
+         FROM Cliente c
+         LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
+         LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+         LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+        WHERE c.id_cliente = ?
+        FOR UPDATE`,
+      [id]
+    );
+
+    if (clienteRows.length === 0) {
+      await connection.rollback();
+      return res.status(404).json({
+        success: false,
+        message: "Cliente no encontrado",
+      });
+    }
+
+    const cliente = clienteRows[0];
+
+    if (cliente.id_tarjeta === null) {
+      await connection.rollback();
+      return res.status(400).json({
+        success: false,
+        message: "El cliente no tiene una tarjeta asociada",
+      });
+    }
+
+    const idTarjeta = cliente.id_tarjeta;
+
+    await connection.execute(
+      `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
+      [id]
+    );
+
+    const tipoSuscripcionDefault = cliente.id_tipo_suscripcion || 1; // 1 = PREPAGA
+
+    await connection.execute(
+      `UPDATE Tarjeta
+          SET id_tipo_suscripcion = ?,
+              id_nivel_suscripcion = NULL,
+              saldo_actual = 0
+        WHERE id_tarjeta = ?`,
+      [tipoSuscripcionDefault, idTarjeta]
+    );
+
+    await connection.commit();
+
+    return res.status(200).json({
+      success: true,
+      message: "Tarjeta desvinculada correctamente",
+      data: {
+        cliente: {
+          id: cliente.id_cliente,
+          nombre: cliente.nombre,
+          apellido: cliente.apellido,
+        },
+        tarjeta: {
+          id: idTarjeta,
+          uuid: cliente.tarjeta_uuid,
+          tipoSuscripcionAnterior: cliente.nombre_tipo_suscripcion,
+          nivelSuscripcionAnterior: cliente.nombre_nivel_suscripcion,
+          saldoAnterior: cliente.saldo_actual,
+        },
+      },
+    });
+  } catch (error) {
+    await connection.rollback();
+    console.error("Error al desvincular tarjeta del cliente:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  } finally {
+    connection.release();
   }
 };
 
@@ -489,7 +671,13 @@ const eliminarCliente = async (req, res) => {
 
     // Eliminar la imagen asociada si existe
     if (clienteAEliminar[0].foto_perfil) {
-      const rutaImagen = path.join(__dirname, '..', 'uploads', 'clientes', clienteAEliminar[0].foto_perfil);
+      const rutaImagen = path.join(
+        __dirname,
+        "..",
+        "uploads",
+        "clientes",
+        clienteAEliminar[0].foto_perfil
+      );
       await deleteFile(rutaImagen);
     }
 
@@ -523,4 +711,5 @@ module.exports = {
   crearCliente,
   actualizarCliente,
   eliminarCliente,
+  desvincularTarjetaCliente,
 };

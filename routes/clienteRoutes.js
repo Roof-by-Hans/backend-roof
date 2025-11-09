@@ -6,6 +6,7 @@ const {
   crearCliente,
   actualizarCliente,
   eliminarCliente,
+  desvincularTarjetaCliente,
 } = require("../controllers/clienteController");
 const {
   authenticate,
@@ -470,6 +471,90 @@ router.put(
   uploadClient.single("fotoPerfil"),
   handleMulterError,
   actualizarCliente
+);
+
+/**
+ * @swagger
+ * /api/clientes/{id}/desvincular-tarjeta:
+ *   patch:
+ *     summary: Desvincular la tarjeta asociada a un cliente
+ *     description: Elimina la relación entre el cliente y su tarjeta actual y resetea los datos de suscripción de la tarjeta.
+ *     tags: [Clientes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Identificador del cliente
+ *     responses:
+ *       200:
+ *         description: Tarjeta desvinculada correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Tarjeta desvinculada correctamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     cliente:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                         nombre:
+ *                           type: string
+ *                         apellido:
+ *                           type: string
+ *                     tarjeta:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                         uuid:
+ *                           type: string
+ *                         tipoSuscripcionAnterior:
+ *                           type: string
+ *                           nullable: true
+ *                         nivelSuscripcionAnterior:
+ *                           type: string
+ *                           nullable: true
+ *                         saldoAnterior:
+ *                           type: number
+ *                           nullable: true
+ *       400:
+ *         description: El cliente no tiene tarjeta asociada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         $ref: '#/components/responses/ForbiddenError'
+ *       404:
+ *         description: Cliente no encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch(
+  "/:id/desvincular-tarjeta",
+  authenticate,
+  authorizeAdmin,
+  desvincularTarjetaCliente
 );
 
 /**
