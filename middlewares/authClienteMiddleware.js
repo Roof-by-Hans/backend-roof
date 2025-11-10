@@ -20,7 +20,25 @@ const authClienteMiddleware = (req, res, next) => {
       });
     }
 
-    const decoded = verifyToken(token);
+    let decoded;
+    try {
+      decoded = verifyToken(token);
+    } catch (tokenError) {
+      if (tokenError.name === "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Token expirado. Por favor, inicie sesión nuevamente",
+          expired: true,
+        });
+      }
+      if (tokenError.name === "JsonWebTokenError") {
+        return res.status(401).json({
+          success: false,
+          message: "Token inválido",
+        });
+      }
+      throw tokenError;
+    }
 
     // Verificar que el token sea de un cliente
     if (decoded.tipo !== "cliente") {
@@ -33,23 +51,11 @@ const authClienteMiddleware = (req, res, next) => {
     req.cliente = decoded;
     next();
   } catch (error) {
-    if (error.name === "TokenExpiredError") {
-      return res.status(401).json({
-        success: false,
-        message: "Token expirado",
-      });
-    }
-
-    if (error.name === "JsonWebTokenError") {
-      return res.status(401).json({
-        success: false,
-        message: "Token inválido",
-      });
-    }
-
+    console.error("Error en autenticación de cliente:", error);
     return res.status(500).json({
       success: false,
       message: "Error al verificar token",
+      error: error.message,
     });
   }
 };

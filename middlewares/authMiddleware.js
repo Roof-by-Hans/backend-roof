@@ -16,7 +16,25 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    const decoded = verifyToken(token);
+    let decoded;
+    try {
+      decoded = verifyToken(token);
+    } catch (tokenError) {
+      if (tokenError.name === "TokenExpiredError") {
+        return res.status(401).json({
+          success: false,
+          message: "Token expirado. Por favor, inicie sesión nuevamente",
+          expired: true,
+        });
+      }
+      if (tokenError.name === "JsonWebTokenError") {
+        return res.status(401).json({
+          success: false,
+          message: "Token inválido",
+        });
+      }
+      throw tokenError;
+    }
 
     // Verificar que el token no sea de un cliente
     if (decoded.tipo === "cliente") {
@@ -61,17 +79,10 @@ const authenticate = async (req, res, next) => {
     next();
   } catch (error) {
     console.error("Error en autenticación:", error);
-    const status =
-      error.name === "JsonWebTokenError" || error.name === "TokenExpiredError"
-        ? 401
-        : 500;
-    res.status(status).json({
+    res.status(500).json({
       success: false,
-      message:
-        status === 401
-          ? "Token inválido o expirado"
-          : "Error interno del servidor",
-      error: status === 401 ? undefined : error.message,
+      message: "Error interno del servidor",
+      error: error.message,
     });
   }
 };
