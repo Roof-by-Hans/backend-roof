@@ -1,8 +1,10 @@
+const path = require("path");
 const { promisePool } = require("../config/database");
 const {
   mapProductoRow,
   mapProductosRows,
 } = require("../helpers/productoMapper");
+const { deleteFile, getFileUrl } = require("../config/multer");
 
 const normalizeNombre = (nombre) => {
   if (nombre === undefined || nombre === null) return "";
@@ -82,10 +84,19 @@ const getProductos = async (req, res) => {
          ORDER BY p.nombre`
     );
 
+    // Agregar URL completa de las imágenes
+    const productosConImagenes = rows.map(row => {
+      const producto = mapProductoRow(row);
+      if (producto.fotoPrincipal) {
+        producto.fotoPrincipalUrl = getFileUrl(req, producto.fotoPrincipal, 'productos');
+      }
+      return producto;
+    });
+
     res.json({
       success: true,
       message: "Productos obtenidos correctamente",
-      data: mapProductosRows(rows),
+      data: productosConImagenes,
     });
   } catch (error) {
     console.error("Error al obtener productos:", error);
@@ -117,10 +128,15 @@ const getProductoPorId = async (req, res) => {
       });
     }
 
+    const productoMapeado = mapProductoRow(producto);
+    if (productoMapeado.fotoPrincipal) {
+      productoMapeado.fotoPrincipalUrl = getFileUrl(req, productoMapeado.fotoPrincipal, 'productos');
+    }
+
     res.json({
       success: true,
       message: "Producto obtenido correctamente",
-      data: mapProductoRow(producto),
+      data: productoMapeado,
     });
   } catch (error) {
     console.error("Error al obtener producto:", error);
@@ -137,14 +153,23 @@ const crearProducto = async (req, res) => {
     const nombre = normalizeNombre(req.body?.nombre);
     let precioUnitario;
     let idCategoria;
-    const fotoPrincipal = req.body?.fotoPrincipal ?? req.body?.foto_principal ?? null;
+    const fotoPrincipal = req.file ? req.file.filename : null; // Imagen subida con multer
     const descripcion = req.body?.descripcion ?? null;
+
+    // Función auxiliar para eliminar imagen si hay error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
 
     try {
       precioUnitario = parsePrecio(
         req.body?.precioUnitario ?? req.body?.precio_unitario
       );
     } catch (parseError) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: parseError.message,
@@ -156,6 +181,7 @@ const crearProducto = async (req, res) => {
         req.body?.idCategoria ?? req.body?.id_categoria
       );
     } catch (parseError) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: parseError.message,
@@ -163,6 +189,7 @@ const crearProducto = async (req, res) => {
     }
 
     if (!nombre) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El nombre del producto es obligatorio",
@@ -170,6 +197,7 @@ const crearProducto = async (req, res) => {
     }
 
     if (precioUnitario === undefined) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "El precio unitario es obligatorio",
@@ -177,6 +205,7 @@ const crearProducto = async (req, res) => {
     }
 
     if (idCategoria === undefined) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "La categoría asociada es obligatoria",
@@ -186,6 +215,7 @@ const crearProducto = async (req, res) => {
     const existeCategoria = await categoriaExiste(idCategoria);
 
     if (!existeCategoria) {
+      await eliminarImagenSubida();
       return res.status(404).json({
         success: false,
         message: "La categoría asociada no existe",
@@ -206,6 +236,12 @@ const crearProducto = async (req, res) => {
       data: mapProductoRow(productoCreado),
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al crear producto:", error);
     res.status(500).json({
       success: false,
@@ -220,6 +256,12 @@ const actualizarProducto = async (req, res) => {
     const id = Number(req.params.id);
 
     if (Number.isNaN(id)) {
+      // Si se subió una imagen, eliminarla porque el ID es inválido
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+      
       return res.status(400).json({
         success: false,
         message: "El identificador del producto no es válido",
@@ -229,11 +271,25 @@ const actualizarProducto = async (req, res) => {
     const productoActual = await obtenerProductoPorId(id);
 
     if (!productoActual) {
+      // Si se subió una imagen, eliminarla porque el producto no existe
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+      
       return res.status(404).json({
         success: false,
         message: "Producto no encontrado",
       });
     }
+
+    // Función auxiliar para eliminar imagen subida en caso de error
+    const eliminarImagenSubida = async () => {
+      if (req.file) {
+        const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+        await deleteFile(rutaImagen);
+      }
+    };
 
     const campos = [];
     const valores = [];
@@ -242,6 +298,7 @@ const actualizarProducto = async (req, res) => {
       const nombreNormalizado = normalizeNombre(req.body.nombre);
 
       if (!nombreNormalizado) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: "El nombre del producto no puede estar vacío",
@@ -263,6 +320,7 @@ const actualizarProducto = async (req, res) => {
           req.body?.precioUnitario ?? req.body?.precio_unitario
         );
       } catch (parseError) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: parseError.message,
@@ -284,6 +342,7 @@ const actualizarProducto = async (req, res) => {
           req.body?.idCategoria ?? req.body?.id_categoria
         );
       } catch (parseError) {
+        await eliminarImagenSubida();
         return res.status(400).json({
           success: false,
           message: parseError.message,
@@ -293,6 +352,7 @@ const actualizarProducto = async (req, res) => {
       const existeCategoria = await categoriaExiste(nuevaCategoria);
 
       if (!existeCategoria) {
+        await eliminarImagenSubida();
         return res.status(404).json({
           success: false,
           message: "La categoría asociada no existe",
@@ -303,13 +363,27 @@ const actualizarProducto = async (req, res) => {
       valores.push(nuevaCategoria);
     }
 
-    if (
-      req.body?.fotoPrincipal !== undefined ||
-      req.body?.foto_principal !== undefined
-    ) {
-      const fotoPrincipal = req.body?.fotoPrincipal ?? req.body?.foto_principal ?? null;
+    // Manejar imagen (nueva imagen o eliminación)
+    const eliminarImagen = req.body?.eliminarImagen === 'true' || req.body?.eliminarImagen === true;
+    
+    if (req.file) {
+      // Si hay una imagen anterior, eliminarla
+      if (productoActual.foto_principal) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'productos', productoActual.foto_principal);
+        await deleteFile(rutaImagenAnterior);
+      }
+      
       campos.push("foto_principal = ?");
-      valores.push(fotoPrincipal);
+      valores.push(req.file.filename);
+    } else if (eliminarImagen) {
+      // Si se solicita eliminar la imagen sin subir una nueva
+      if (productoActual.foto_principal) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'productos', productoActual.foto_principal);
+        await deleteFile(rutaImagenAnterior);
+      }
+      
+      campos.push("foto_principal = ?");
+      valores.push(null);
     }
 
     if (req.body?.descripcion !== undefined) {
@@ -318,6 +392,7 @@ const actualizarProducto = async (req, res) => {
     }
 
     if (campos.length === 0) {
+      await eliminarImagenSubida();
       return res.status(400).json({
         success: false,
         message: "Debe proporcionar al menos un campo para actualizar",
@@ -334,13 +409,24 @@ const actualizarProducto = async (req, res) => {
     );
 
     const productoActualizado = await obtenerProductoPorId(id);
+    const productoMapeado = mapProductoRow(productoActualizado);
+    
+    if (productoMapeado.fotoPrincipal) {
+      productoMapeado.fotoPrincipalUrl = getFileUrl(req, productoMapeado.fotoPrincipal, 'productos');
+    }
 
     res.json({
       success: true,
       message: "Producto actualizado correctamente",
-      data: mapProductoRow(productoActualizado),
+      data: productoMapeado,
     });
   } catch (error) {
+    // Si hay un error general, eliminar la imagen subida
+    if (req.file) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', req.file.filename);
+      await deleteFile(rutaImagen);
+    }
+    
     console.error("Error al actualizar producto:", error);
     res.status(500).json({
       success: false,
@@ -361,6 +447,17 @@ const eliminarProducto = async (req, res) => {
       });
     }
 
+    // Obtener el producto para eliminar la imagen asociada
+    const productoAEliminar = await obtenerProductoPorId(id);
+
+    if (!productoAEliminar) {
+      return res.status(404).json({
+        success: false,
+        message: "Producto no encontrado",
+      });
+    }
+
+    // Eliminar el producto de la base de datos
     const [result] = await promisePool.execute(
       `DELETE FROM Producto
        WHERE id_producto = ?`,
@@ -372,6 +469,12 @@ const eliminarProducto = async (req, res) => {
         success: false,
         message: "Producto no encontrado",
       });
+    }
+
+    // Eliminar la imagen asociada si existe
+    if (productoAEliminar.foto_principal) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'productos', productoAEliminar.foto_principal);
+      await deleteFile(rutaImagen);
     }
 
     res.json({

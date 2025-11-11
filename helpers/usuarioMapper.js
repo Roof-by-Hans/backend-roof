@@ -18,6 +18,7 @@ const mapUsuarioRow = (row) => {
     nombreUsuario: row.nombre_usuario,
     activo:
       row.activo === null ? null : row.activo === 1 || row.activo === true,
+    fotoPerfil: row.foto_perfil || null,
     roles: parseRoles(row.roles),
   };
 };

@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const path = require("path");
 const { promisePool } = require("../config/database");
 const { mapUsuarioRow, mapUsuariosRows } = require("../helpers/usuarioMapper");
 const {
@@ -8,6 +9,7 @@ const {
   eliminarRolAsignado,
   obtenerRolesUsuario,
 } = require("../helpers/rolHelper");
+const { deleteFile, getFileUrl } = require("../config/multer");
 
 const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
 
@@ -33,16 +35,25 @@ const getUsuarios = async (req, res) => {
       `SELECT u.id_usuario,
         u.nombre_usuario,
         u.activo,
+        u.foto_perfil,
         GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
-       GROUP BY u.id_usuario, u.nombre_usuario, u.activo`
+       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`
     );
+
+    // Agregar URL completa de las imágenes de perfil
+    const usuariosConImagenes = mapUsuariosRows(rows).map(usuario => {
+      if (usuario.fotoPerfil) {
+        usuario.fotoPerfilUrl = getFileUrl(req, usuario.fotoPerfil, 'usuarios');
+      }
+      return usuario;
+    });
 
     res.json({
       success: true,
-      data: mapUsuariosRows(rows),
+      data: usuariosConImagenes,
       message: "Usuarios obtenidos correctamente",
     });
   } catch (error) {
@@ -62,12 +73,13 @@ const getUsuarioPorId = async (req, res) => {
       `SELECT u.id_usuario,
         u.nombre_usuario,
         u.activo,
+        u.foto_perfil,
         GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
        WHERE u.id_usuario = ?
-       GROUP BY u.id_usuario, u.nombre_usuario, u.activo`,
+       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`,
       [id]
     );
 
@@ -78,9 +90,14 @@ const getUsuarioPorId = async (req, res) => {
       });
     }
 
+    const usuarioMapeado = mapUsuarioRow(rows[0]);
+    if (usuarioMapeado.fotoPerfil) {
+      usuarioMapeado.fotoPerfilUrl = getFileUrl(req, usuarioMapeado.fotoPerfil, 'usuarios');
+    }
+
     res.json({
       success: true,
-      data: mapUsuarioRow(rows[0]),
+      data: usuarioMapeado,
       message: "Usuario obtenido correctamente",
     });
   } catch (error) {
@@ -96,6 +113,7 @@ const getUsuarioPorId = async (req, res) => {
 const crearUsuario = async (req, res) => {
   try {
     const { nombreUsuario, contrasena, activo } = req.body;
+    const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
 
     if (!nombreUsuario || !contrasena) {
       return res.status(400).json({
@@ -108,16 +126,21 @@ const crearUsuario = async (req, res) => {
     const hashedPassword = await hashPassword(contrasena);
 
     const [result] = await promisePool.execute(
-      "INSERT INTO Usuario (nombre_usuario, contrasena, activo) VALUES (?, ?, ?)",
-      [nombreUsuario, hashedPassword, activoNormalizado]
+      "INSERT INTO Usuario (nombre_usuario, contrasena, activo, foto_perfil) VALUES (?, ?, ?, ?)",
+      [nombreUsuario, hashedPassword, activoNormalizado, fotoPerfil]
     );
 
     const nuevoUsuario = mapUsuarioRow({
       id_usuario: result.insertId,
       nombre_usuario: nombreUsuario,
       activo: activoNormalizado,
+      foto_perfil: fotoPerfil,
       roles: [],
     });
+
+    if (nuevoUsuario.fotoPerfil) {
+      nuevoUsuario.fotoPerfilUrl = getFileUrl(req, nuevoUsuario.fotoPerfil, 'usuarios');
+    }
 
     res.status(201).json({
       success: true,
@@ -147,6 +170,19 @@ const actualizarUsuario = async (req, res) => {
     const { id } = req.params;
     const { nombreUsuario, contrasena, activo } = req.body;
 
+    // Obtener el usuario existente para manejar la imagen anterior
+    const [usuarioExistente] = await promisePool.execute(
+      "SELECT foto_perfil FROM Usuario WHERE id_usuario = ?",
+      [id]
+    );
+
+    if (usuarioExistente.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado",
+      });
+    }
+
     const campos = [];
     const valores = [];
 
@@ -155,13 +191,7 @@ const actualizarUsuario = async (req, res) => {
       valores.push(nombreUsuario);
     }
 
-    if (contrasena !== undefined) {
-      if (!contrasena) {
-        return res.status(400).json({
-          success: false,
-          message: "La contraseña no puede estar vacía",
-        });
-      }
+    if (contrasena !== undefined && contrasena !== null && contrasena !== "") {
       const hashedPassword = await hashPassword(contrasena);
       campos.push("contrasena = ?");
       valores.push(hashedPassword);
@@ -170,6 +200,26 @@ const actualizarUsuario = async (req, res) => {
     if (activo !== undefined) {
       campos.push("activo = ?");
       valores.push(normalizeActivo(activo));
+    }
+
+    // Manejar nueva imagen si se subió
+    if (req.file) {
+      // Si hay una imagen anterior, eliminarla
+      if (usuarioExistente[0].foto_perfil) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'usuarios', usuarioExistente[0].foto_perfil);
+        await deleteFile(rutaImagenAnterior);
+      }
+      
+      campos.push("foto_perfil = ?");
+      valores.push(req.file.filename);
+    } else if (req.body.eliminarFotoPerfil === "true" || req.body.eliminarFotoPerfil === true) {
+      // Si se solicita eliminar la foto de perfil y no se subió una nueva
+      if (usuarioExistente[0].foto_perfil) {
+        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'usuarios', usuarioExistente[0].foto_perfil);
+        await deleteFile(rutaImagenAnterior);
+      }
+      campos.push("foto_perfil = ?");
+      valores.push(null);
     }
 
     if (campos.length === 0) {
@@ -197,18 +247,24 @@ const actualizarUsuario = async (req, res) => {
       `SELECT u.id_usuario,
         u.nombre_usuario,
         u.activo,
+        u.foto_perfil,
         GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
        WHERE u.id_usuario = ?
-       GROUP BY u.id_usuario, u.nombre_usuario, u.activo`,
+       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`,
       [id]
     );
 
+    const usuarioActualizado = mapUsuarioRow(rows[0]);
+    if (usuarioActualizado.fotoPerfil) {
+      usuarioActualizado.fotoPerfilUrl = getFileUrl(req, usuarioActualizado.fotoPerfil, 'usuarios');
+    }
+
     res.json({
       success: true,
-      data: mapUsuarioRow(rows[0]),
+      data: usuarioActualizado,
       message: "Usuario actualizado correctamente",
     });
   } catch (error) {
@@ -233,6 +289,19 @@ const eliminarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Obtener la imagen del usuario antes de eliminarlo
+    const [usuarioAEliminar] = await promisePool.execute(
+      "SELECT foto_perfil FROM Usuario WHERE id_usuario = ?",
+      [id]
+    );
+
+    if (usuarioAEliminar.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Usuario no encontrado",
+      });
+    }
+
     const [result] = await promisePool.execute(
       "DELETE FROM Usuario WHERE id_usuario = ?",
       [id]
@@ -243,6 +312,12 @@ const eliminarUsuario = async (req, res) => {
         success: false,
         message: "Usuario no encontrado",
       });
+    }
+
+    // Eliminar la imagen asociada si existe
+    if (usuarioAEliminar[0].foto_perfil) {
+      const rutaImagen = path.join(__dirname, '..', 'uploads', 'usuarios', usuarioAEliminar[0].foto_perfil);
+      await deleteFile(rutaImagen);
     }
 
     res.json({
