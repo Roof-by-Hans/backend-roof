@@ -158,6 +158,8 @@ const registrarConsumo = async (req, res) => {
 
     // 5. Verificar saldo o límite de crédito según el tipo de tarjeta
     if (cliente.tipo_suscripcion === "PREPAGA") {
+      // PREPAGA: saldo_actual representa dinero disponible (positivo)
+      // Se valida que haya suficiente saldo para el consumo
       const saldoActual = parseFloat(cliente.saldo_actual || 0);
       
       if (saldoActual < total) {
@@ -173,6 +175,8 @@ const registrarConsumo = async (req, res) => {
         });
       }
     } else if (cliente.tipo_suscripcion === "CREDITO") {
+      // CRÉDITO: saldo_actual representa deuda acumulada (positivo = debe dinero)
+      // Se valida que la nueva deuda no supere el límite de crédito
       const deudaActual = parseFloat(cliente.saldo_actual || 0);
       const limiteCredito = parseFloat(cliente.limite_credito || 0);
       const nuevaDeuda = deudaActual + total;
@@ -187,6 +191,7 @@ const registrarConsumo = async (req, res) => {
             limiteCredito: limiteCredito,
             creditoDisponible: limiteCredito - deudaActual,
             totalConsumo: total,
+            nuevaDeuda: nuevaDeuda,
           },
         });
       }
@@ -229,20 +234,20 @@ const registrarConsumo = async (req, res) => {
     const idUsuario = req.user?.id || null; // Asumiendo que el middleware auth agrega user al req
 
     await connection.execute(
-      `INSERT INTO MovimientoCuenta (id_cliente, id_tarjeta, fecha, monto, tipo_movimiento, id_tipo_mov, id_factura, id_usuario, observaciones)
-       VALUES (?, ?, NOW(), ?, 'CONSUMO', ?, ?, ?, ?)`,
+      `INSERT INTO MovimientoCuenta (id_cliente, id_tarjeta, fecha, monto, id_tipo_mov, id_factura, id_usuario, observaciones)
+       VALUES (?, ?, NOW(), ?, ?, ?, ?, ?)`,
       [idCliente, cliente.id_tarjeta, total, idTipoMovConsumo, idFactura, idUsuario, observacionesCompletas]
     );
 
     // 9. Actualizar el saldo de la tarjeta según el tipo
     if (cliente.tipo_suscripcion === "PREPAGA") {
-      // Descontar del saldo
+      // PREPAGA: Descontar del saldo disponible
       await connection.execute(
         `UPDATE Tarjeta SET saldo_actual = saldo_actual - ? WHERE id_tarjeta = ?`,
         [total, cliente.id_tarjeta]
       );
     } else if (cliente.tipo_suscripcion === "CREDITO") {
-      // Aumentar la deuda
+      // CRÉDITO: Aumentar la deuda (saldo positivo = deuda)
       await connection.execute(
         `UPDATE Tarjeta SET saldo_actual = saldo_actual + ? WHERE id_tarjeta = ?`,
         [total, cliente.id_tarjeta]
@@ -395,11 +400,13 @@ const registrarRecarga = async (req, res) => {
     const idTipoMovRecarga = tipoMovResult.length > 0 ? tipoMovResult[0].id_tipo_mov : null;
     const idUsuario = req.user?.id || null; // Asumiendo que el middleware auth agrega user al req
 
-    await connection.execute(
-      `INSERT INTO MovimientoCuenta (id_cliente, id_tarjeta, fecha, monto, tipo_movimiento, id_tipo_mov, id_usuario, observaciones)
-       VALUES (?, ?, NOW(), ?, 'RECARGA', ?, ?, ?)`,
+    const [movCuentaResult] = await connection.execute(
+      `INSERT INTO MovimientoCuenta (id_cliente, id_tarjeta, fecha, monto, id_tipo_mov, id_usuario, observaciones)
+       VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
       [idCliente, cliente.id_tarjeta, montoRecarga, idTipoMovRecarga, idUsuario, observacionesCompletas]
     );
+
+    const idMovimientoCuenta = movCuentaResult.insertId;
 
     // 3. Actualizar el saldo de la tarjeta
     const saldoAnterior = parseFloat(cliente.saldo_actual || 0);
@@ -410,6 +417,33 @@ const registrarRecarga = async (req, res) => {
     );
 
     const saldoNuevo = saldoAnterior + montoRecarga;
+
+    // 4. Registrar el ingreso en la caja diaria si hay una caja abierta
+    const [cajaAbierta] = await connection.execute(
+      `SELECT id_caja FROM CajaDiaria WHERE fecha = CURDATE() AND estado = 'ABIERTA' LIMIT 1`
+    );
+
+    let movimientoCajaRegistrado = false;
+    if (cajaAbierta.length > 0) {
+      const idCaja = cajaAbierta[0].id_caja;
+      
+      // Obtener el ID del medio de pago
+      const [medioPagoRows] = await connection.execute(
+        `SELECT id_medio_pago FROM MedioPago WHERE nombre = ? LIMIT 1`,
+        [metodoPago]
+      );
+
+      const idMedioPago = medioPagoRows.length > 0 ? medioPagoRows[0].id_medio_pago : null;
+
+      // Registrar el movimiento en caja
+      await connection.execute(
+        `INSERT INTO MovimientoCaja (id_caja, id_cliente, tipo, id_medio_pago, monto, concepto, id_usuario, id_movimiento_cuenta, fecha)
+         VALUES (?, ?, 'INGRESO', ?, ?, ?, ?, ?, NOW())`,
+        [idCaja, idCliente, idMedioPago, montoRecarga, `Recarga de tarjeta ${cliente.id_tarjeta}`, idUsuario, idMovimientoCuenta]
+      );
+
+      movimientoCajaRegistrado = true;
+    }
 
     await connection.commit();
 
@@ -431,6 +465,7 @@ const registrarRecarga = async (req, res) => {
           recargado: montoRecarga,
           actual: saldoNuevo,
         },
+        movimientoCajaRegistrado: movimientoCajaRegistrado,
       },
     });
   } catch (error) {
@@ -553,11 +588,13 @@ const registrarPago = async (req, res) => {
     const idTipoMovPago = tipoMovResult.length > 0 ? tipoMovResult[0].id_tipo_mov : null;
     const idUsuario = req.user?.id || null; // Asumiendo que el middleware auth agrega user al req
 
-    await connection.execute(
-      `INSERT INTO MovimientoCuenta (id_cliente, id_tarjeta, fecha, monto, tipo_movimiento, id_tipo_mov, id_factura, id_usuario, observaciones)
-       VALUES (?, ?, NOW(), ?, 'PAGO', ?, ?, ?, ?)`,
+    const [movCuentaResult] = await connection.execute(
+      `INSERT INTO MovimientoCuenta (id_cliente, id_tarjeta, fecha, monto, id_tipo_mov, id_factura, id_usuario, observaciones)
+       VALUES (?, ?, NOW(), ?, ?, ?, ?, ?)`,
       [idCliente, cliente.id_tarjeta, montoPago, idTipoMovPago, idFactura || null, idUsuario, observacionesCompletas]
     );
+
+    const idMovimientoCuenta = movCuentaResult.insertId;
 
     // 4. Actualizar el saldo de la tarjeta (reducir deuda)
     const deudaAnterior = parseFloat(cliente.saldo_actual || 0);
@@ -584,6 +621,33 @@ const registrarPago = async (req, res) => {
       }
     }
 
+    // 6. Registrar el ingreso en la caja diaria si hay una caja abierta
+    const [cajaAbierta] = await connection.execute(
+      `SELECT id_caja FROM CajaDiaria WHERE fecha = CURDATE() AND estado = 'ABIERTA' LIMIT 1`
+    );
+
+    let movimientoCajaRegistrado = false;
+    if (cajaAbierta.length > 0) {
+      const idCaja = cajaAbierta[0].id_caja;
+      
+      // Obtener el ID del medio de pago
+      const [medioPagoRows] = await connection.execute(
+        `SELECT id_medio_pago FROM MedioPago WHERE nombre = ? LIMIT 1`,
+        [metodoPago]
+      );
+
+      const idMedioPago = medioPagoRows.length > 0 ? medioPagoRows[0].id_medio_pago : null;
+
+      // Registrar el movimiento en caja
+      await connection.execute(
+        `INSERT INTO MovimientoCaja (id_caja, id_cliente, tipo, id_medio_pago, monto, concepto, id_usuario, id_movimiento_cuenta, fecha)
+         VALUES (?, ?, 'INGRESO', ?, ?, ?, ?, ?, NOW())`,
+        [idCaja, idCliente, idMedioPago, montoPago, `Pago de deuda - Tarjeta ${cliente.id_tarjeta}`, idUsuario, idMovimientoCuenta]
+      );
+
+      movimientoCajaRegistrado = true;
+    }
+
     await connection.commit();
 
     res.status(201).json({
@@ -605,6 +669,7 @@ const registrarPago = async (req, res) => {
           montoPagado: montoPago,
           deudaActual: deudaNueva,
         },
+        movimientoCajaRegistrado: movimientoCajaRegistrado,
         ...(facturaInfo && {
           factura: {
             id: facturaInfo.id_factura,

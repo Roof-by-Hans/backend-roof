@@ -12,10 +12,9 @@ const mapMovimientoCuentaRow = (row) => {
     idTarjeta: row.id_tarjeta || null,
     fecha: row.fecha,
     monto: parseFloat(row.monto),
-    tipoMovimiento: row.tipo_movimiento,
+    tipoMovimiento: row.tipo_movimiento_nombre || null,
     idTipoMov: row.id_tipo_mov || null,
     idFactura: row.id_factura || null,
-    idMovCaja: row.id_mov_caja || null,
     idUsuario: row.id_usuario || null,
     observaciones: row.observaciones || null,
     // Información adicional del cliente si está disponible

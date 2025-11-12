@@ -132,7 +132,23 @@ const {
  * /api/transacciones/consumo:
  *   post:
  *     summary: Registrar consumo de productos y generar factura automáticamente
- *     description: Crea una factura con los productos consumidos, registra el movimiento de cuenta y actualiza el saldo de la tarjeta del cliente. Para tarjetas PREPAGA descuenta del saldo, para CRÉDITO aumenta la deuda.
+ *     description: |
+ *       Crea una factura con los productos consumidos, registra el movimiento de cuenta y actualiza el saldo de la tarjeta del cliente.
+ *       
+ *       **Comportamiento según tipo de tarjeta:**
+ *       - **PREPAGA**: Descuenta del saldo disponible. La factura se marca como COBRADA automáticamente.
+ *       - **CRÉDITO**: Aumenta la deuda (saldo_actual += monto). La factura queda PENDIENTE hasta que se pague.
+ *       
+ *       **Validaciones:**
+ *       - PREPAGA: No permite consumo si saldo < total
+ *       - CRÉDITO: No permite consumo si deuda_actual + total > limite_credito
+ *       - No se puede especificar idMesa e idGrupo al mismo tiempo
+ *       
+ *       **Registro en base de datos:**
+ *       - Se crea la Factura con los productos (estado COBRADA o PENDIENTE)
+ *       - Se registra MovimientoCuenta con tipo CONSUMO (id_tipo_mov referencia a TipoMovimiento)
+ *       - Se actualiza el saldo de la Tarjeta según el tipo
+ *       - NO se registra en MovimientoCaja (el dinero ya fue pagado en PREPAGA o se pagará después en CRÉDITO)
  *     tags: [Transacciones]
  *     security:
  *       - bearerAuth: []
@@ -200,12 +216,14 @@ const {
  *                           type: number
  *                           format: float
  *                           example: 50000.00
+ *                           description: Para PREPAGA es saldo disponible, para CRÉDITO es deuda acumulada
  *                         saldoActual:
  *                           type: number
  *                           format: float
  *                           example: 37000.00
+ *                           description: Para PREPAGA es saldo disponible, para CRÉDITO es deuda acumulada
  *       400:
- *         description: Datos inválidos o saldo insuficiente
+ *         description: Datos inválidos, saldo insuficiente o límite de crédito excedido
  *         content:
  *           application/json:
  *             schema:
@@ -223,12 +241,56 @@ const {
  *                     saldoActual:
  *                       type: number
  *                       example: 5000.00
+ *                       description: Saldo disponible (PREPAGA) o deuda actual (CRÉDITO)
  *                     totalConsumo:
  *                       type: number
  *                       example: 13000.00
  *                     faltante:
  *                       type: number
  *                       example: 8000.00
+ *                       description: Solo para PREPAGA
+ *                     deudaActual:
+ *                       type: number
+ *                       example: 30000.00
+ *                       description: Solo para CRÉDITO
+ *                     limiteCredito:
+ *                       type: number
+ *                       example: 100000.00
+ *                       description: Solo para CRÉDITO
+ *                     creditoDisponible:
+ *                       type: number
+ *                       example: 70000.00
+ *                       description: Solo para CRÉDITO
+ *                     nuevaDeuda:
+ *                       type: number
+ *                       example: 43000.00
+ *                       description: Solo para CRÉDITO - Deuda que tendría después del consumo
+ *             examples:
+ *               saldoInsuficiente:
+ *                 summary: Error PREPAGA - Saldo insuficiente
+ *                 value:
+ *                   success: false
+ *                   message: "Saldo insuficiente para realizar el consumo"
+ *                   detalles:
+ *                     saldoActual: 5000.00
+ *                     totalConsumo: 13000.00
+ *                     faltante: 8000.00
+ *               limiteExcedido:
+ *                 summary: Error CRÉDITO - Límite excedido
+ *                 value:
+ *                   success: false
+ *                   message: "El consumo excede el límite de crédito disponible"
+ *                   detalles:
+ *                     deudaActual: 95000.00
+ *                     limiteCredito: 100000.00
+ *                     creditoDisponible: 5000.00
+ *                     totalConsumo: 10000.00
+ *                     nuevaDeuda: 105000.00
+ *               mesaYGrupo:
+ *                 summary: Error - No se puede enviar mesa y grupo juntos
+ *                 value:
+ *                   success: false
+ *                   message: "No puede especificar tanto mesa individual como grupo de mesas"
  *       404:
  *         description: Cliente, producto, mesa o grupo no encontrado
  *       401:
@@ -243,7 +305,18 @@ router.post("/consumo", authenticate, authorizeAdmin, registrarConsumo);
  * /api/transacciones/recarga:
  *   post:
  *     summary: Registrar recarga de tarjeta prepaga
- *     description: Permite recargar saldo en tarjetas de tipo PREPAGA. Las tarjetas de tipo CRÉDITO no pueden recargarse.
+ *     description: |
+ *       Permite recargar saldo en tarjetas de tipo PREPAGA. Las tarjetas de tipo CRÉDITO no pueden recargarse.
+ *       
+ *       **Proceso:**
+ *       - Se valida que la tarjeta sea PREPAGA
+ *       - Se registra MovimientoCuenta con tipo RECARGA (id_tipo_mov referencia a TipoMovimiento)
+ *       - Se suma el monto al saldo de la tarjeta: `saldo_actual += monto`
+ *       - Si hay caja abierta del día, se registra INGRESO en MovimientoCaja
+ *       - Se vincula el MovimientoCaja con el MovimientoCuenta mediante id_movimiento_cuenta
+ *       - Se registra el medio de pago usado
+ *       
+ *       **Nota:** La recarga se registra en caja solo si hay una caja abierta en la fecha actual.
  *     tags: [Transacciones]
  *     security:
  *       - bearerAuth: []
@@ -297,7 +370,7 @@ router.post("/consumo", authenticate, authorizeAdmin, registrarConsumo);
  *                         fecha:
  *                           type: string
  *                           format: date-time
- *                           example: "2025-10-10T14:30:00.000Z"
+ *                           example: "2025-11-12T14:30:00.000Z"
  *                     saldos:
  *                       type: object
  *                       properties:
@@ -313,6 +386,10 @@ router.post("/consumo", authenticate, authorizeAdmin, registrarConsumo);
  *                           type: number
  *                           format: float
  *                           example: 60000.00
+ *                     movimientoCajaRegistrado:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Indica si se registró el ingreso en MovimientoCaja (solo si hay caja abierta)
  *       400:
  *         description: Datos inválidos o tipo de tarjeta no válido
  *         content:
@@ -343,7 +420,22 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  * /api/transacciones/pago:
  *   post:
  *     summary: Registrar pago de factura o reducción de deuda
- *     description: Permite registrar pagos para liquidar deudas de tarjetas CRÉDITO o pagar facturas específicas. Si el monto del pago es igual o mayor al total de la factura, esta se marca como COBRADA.
+ *     description: |
+ *       Permite registrar pagos para liquidar deudas de tarjetas CRÉDITO o pagar facturas específicas.
+ *       
+ *       **Proceso:**
+ *       - Se registra MovimientoCuenta con tipo PAGO (id_tipo_mov referencia a TipoMovimiento)
+ *       - Se reduce la deuda de la tarjeta: `saldo_actual -= monto`
+ *       - Si se especifica idFactura y el pago es >= total de la factura, se actualiza estado a COBRADA
+ *       - Si hay caja abierta del día, se registra INGRESO en MovimientoCaja
+ *       - Se vincula el MovimientoCaja con el MovimientoCuenta mediante id_movimiento_cuenta
+ *       - Se registra el medio de pago usado
+ *       
+ *       **Uso típico:**
+ *       - Para tarjetas CRÉDITO: Pagar deuda acumulada
+ *       - Puede vincular a una factura específica o ser un pago general
+ *       
+ *       **Nota:** El pago se registra en caja solo si hay una caja abierta en la fecha actual.
  *     tags: [Transacciones]
  *     security:
  *       - bearerAuth: []
@@ -412,7 +504,7 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *                         fecha:
  *                           type: string
  *                           format: date-time
- *                           example: "2025-10-10T14:30:00.000Z"
+ *                           example: "2025-11-12T14:30:00.000Z"
  *                     saldos:
  *                       type: object
  *                       properties:
@@ -420,6 +512,7 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *                           type: number
  *                           format: float
  *                           example: 50000.00
+ *                           description: Deuda acumulada antes del pago (saldo_actual)
  *                         montoPagado:
  *                           type: number
  *                           format: float
@@ -428,6 +521,11 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *                           type: number
  *                           format: float
  *                           example: 35000.00
+ *                           description: Deuda después del pago (saldo_actual)
+ *                     movimientoCajaRegistrado:
+ *                       type: boolean
+ *                       example: true
+ *                       description: Indica si se registró el ingreso en MovimientoCaja (solo si hay caja abierta)
  *                     factura:
  *                       type: object
  *                       description: Información de la factura (solo si se especificó idFactura)

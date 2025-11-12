@@ -15,10 +15,8 @@ const getMovimientosCuenta = async (req, res) => {
               mc.id_tarjeta,
               mc.fecha,
               mc.monto,
-              mc.tipo_movimiento,
               mc.id_tipo_mov,
               mc.id_factura,
-              mc.id_mov_caja,
               mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
@@ -67,10 +65,8 @@ const getMovimientoCuentaPorId = async (req, res) => {
               mc.id_tarjeta,
               mc.fecha,
               mc.monto,
-              mc.tipo_movimiento,
               mc.id_tipo_mov,
               mc.id_factura,
-              mc.id_mov_caja,
               mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
@@ -128,10 +124,8 @@ const getMovimientosPorCliente = async (req, res) => {
               mc.id_tarjeta,
               mc.fecha,
               mc.monto,
-              mc.tipo_movimiento,
               mc.id_tipo_mov,
               mc.id_factura,
-              mc.id_mov_caja,
               mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
@@ -155,8 +149,8 @@ const getMovimientosPorCliente = async (req, res) => {
     const params = [idCliente];
 
     // Filtrar por tipo de movimiento si se especifica
-    if (tipo && ["CONSUMO", "RECARGA", "PAGO"].includes(tipo.toUpperCase())) {
-      query += ` AND mc.tipo_movimiento = ?`;
+    if (tipo && ["CONSUMO", "RECARGA", "PAGO", "AJUSTE"].includes(tipo.toUpperCase())) {
+      query += ` AND tm.nombre = ?`;
       params.push(tipo.toUpperCase());
     }
 
@@ -216,12 +210,13 @@ const getResumenCuentaCliente = async (req, res) => {
 
     // Obtener totales por tipo de movimiento
     const [totalesRows] = await promisePool.execute(
-      `SELECT tipo_movimiento,
+      `SELECT tm.nombre as tipo_movimiento,
               COUNT(*) as cantidad,
-              SUM(monto) as total
-       FROM MovimientoCuenta
-       WHERE id_cliente = ?
-       GROUP BY tipo_movimiento`,
+              SUM(mc.monto) as total
+       FROM MovimientoCuenta mc
+       INNER JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
+       WHERE mc.id_cliente = ?
+       GROUP BY tm.nombre`,
       [idCliente]
     );
 
@@ -232,10 +227,8 @@ const getResumenCuentaCliente = async (req, res) => {
               mc.id_tarjeta,
               mc.fecha,
               mc.monto,
-              mc.tipo_movimiento,
               mc.id_tipo_mov,
               mc.id_factura,
-              mc.id_mov_caja,
               mc.id_usuario,
               mc.observaciones,
               t.uuid AS tarjeta_uuid,
@@ -298,10 +291,8 @@ const getMovimientosPorTarjeta = async (req, res) => {
               mc.id_tarjeta,
               mc.fecha,
               mc.monto,
-              mc.tipo_movimiento,
               mc.id_tipo_mov,
               mc.id_factura,
-              mc.id_mov_caja,
               mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
@@ -325,8 +316,8 @@ const getMovimientosPorTarjeta = async (req, res) => {
     const params = [idTarjeta];
 
     // Filtrar por tipo de movimiento si se especifica
-    if (tipo && ["CONSUMO", "RECARGA", "PAGO"].includes(tipo.toUpperCase())) {
-      query += ` AND mc.tipo_movimiento = ?`;
+    if (tipo && ["CONSUMO", "RECARGA", "PAGO", "AJUSTE"].includes(tipo.toUpperCase())) {
+      query += ` AND tm.nombre = ?`;
       params.push(tipo.toUpperCase());
     }
 
@@ -374,10 +365,8 @@ const getMovimientosPorTipo = async (req, res) => {
               mc.id_tarjeta,
               mc.fecha,
               mc.monto,
-              mc.tipo_movimiento,
               mc.id_tipo_mov,
               mc.id_factura,
-              mc.id_mov_caja,
               mc.id_usuario,
               mc.observaciones,
               c.nombre AS nombre_cliente,
