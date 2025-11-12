@@ -525,12 +525,22 @@ const asociarTarjetaCliente = async (req, res) => {
 
     const cliente = clienteRows[0];
 
-    // 3. Verificar primero si la tarjeta escaneada es la que ya tiene el cliente
-    const uidNormalizadoPrevio = String(rfidUid).toUpperCase().trim();
-    let esLaMismaTarjeta = false;
+    // 3. PRIMERO: Buscar si la tarjeta escaneada ya existe y a quién pertenece
+    const uidNormalizado = String(rfidUid).toUpperCase().trim();
+    const [tarjetaEscaneadaRows] = await connection.execute(
+      `SELECT t.id_tarjeta, t.uuid, c.id_cliente, c.nombre, c.apellido,
+              ts.nombre AS tipo_suscripcion, ns.nombre AS nivel_suscripcion
+       FROM Tarjeta t
+       LEFT JOIN Cliente c ON c.id_tarjeta = t.id_tarjeta
+       LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+       LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+       WHERE t.uuid = ?`,
+      [uidNormalizado]
+    );
 
+    // 4. SEGUNDO: Obtener info de la tarjeta actual del cliente (si tiene)
+    let tarjetaActualCliente = null;
     if (cliente.id_tarjeta !== null) {
-      // Obtener UUID de la tarjeta actual del cliente
       const [tarjetaActualRows] = await connection.execute(
         `SELECT t.id_tarjeta, t.uuid, ts.nombre AS tipo_suscripcion, ns.nombre AS nivel_suscripcion
          FROM Tarjeta t
@@ -539,57 +549,133 @@ const asociarTarjetaCliente = async (req, res) => {
          WHERE t.id_tarjeta = ?`,
         [cliente.id_tarjeta]
       );
-
-      console.log(`[ASOCIAR] Comparando UUIDs:`, {
-        tarjetaActualCliente: tarjetaActualRows[0]?.uuid,
-        uidEscaneado: uidNormalizadoPrevio,
-        sonIguales: tarjetaActualRows[0]?.uuid === uidNormalizadoPrevio,
-      });
-
-      if (
-        tarjetaActualRows.length > 0 &&
-        tarjetaActualRows[0].uuid === uidNormalizadoPrevio
-      ) {
-        // Es la misma tarjeta! Solo necesitamos actualizarla, no desvincular
-        esLaMismaTarjeta = true;
-        console.log(
-          `[ASOCIAR] Cliente ${idCliente} está actualizando su propia tarjeta ${cliente.id_tarjeta}`
-        );
-      } else {
-        // Es una tarjeta DIFERENTE
-        if (!forzarDesvinculacion) {
-          await connection.rollback();
-          return res.status(409).json({
-            success: false,
-            message: `El cliente ${cliente.nombre} ${cliente.apellido} ya tiene una tarjeta asociada`,
-            data: {
-              tarjetaActual: tarjetaActualRows[0]
-                ? {
-                    uuid: tarjetaActualRows[0].uuid,
-                    tipo: tarjetaActualRows[0].tipo_suscripcion,
-                    nivel: tarjetaActualRows[0].nivel_suscripcion,
-                  }
-                : null,
-            },
-          });
-        }
-
-        // Desvincular la tarjeta anterior (diferente) del cliente
-        console.log(
-          `[ASOCIAR] Desvinculando tarjeta anterior ${cliente.id_tarjeta} del cliente ${idCliente}`
-        );
-        await connection.execute(
-          `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
-          [idCliente]
-        );
+      if (tarjetaActualRows.length > 0) {
+        tarjetaActualCliente = tarjetaActualRows[0];
       }
     }
 
-    // 3b. Variable para tracking
+    // 5. Analizar escenarios de conflicto
+    const tarjetaEscaneada =
+      tarjetaEscaneadaRows.length > 0 ? tarjetaEscaneadaRows[0] : null;
+    const esLaMismaTarjeta =
+      tarjetaActualCliente &&
+      tarjetaEscaneada &&
+      tarjetaActualCliente.uuid === tarjetaEscaneada.uuid;
+
+    console.log(`[ASOCIAR] Análisis de conflictos:`, {
+      clienteNuevo: { id: cliente.id_cliente, nombre: cliente.nombre },
+      tarjetaEscaneada: tarjetaEscaneada
+        ? { uuid: tarjetaEscaneada.uuid, propietario: tarjetaEscaneada.nombre }
+        : "nueva",
+      tarjetaActualCliente: tarjetaActualCliente
+        ? tarjetaActualCliente.uuid
+        : "ninguna",
+      esLaMismaTarjeta,
+    });
+
+    // 6. Manejar conflictos si no se fuerza la desvinculación
+    if (!forzarDesvinculacion) {
+      // Caso 1: La tarjeta escaneada pertenece a otro cliente DIFERENTE
+      if (
+        tarjetaEscaneada &&
+        tarjetaEscaneada.id_cliente !== null &&
+        tarjetaEscaneada.id_cliente !== parseInt(idCliente)
+      ) {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: `Esta tarjeta ya está asociada al cliente ${tarjetaEscaneada.nombre} ${tarjetaEscaneada.apellido}`,
+          data: {
+            clienteActual: {
+              id: tarjetaEscaneada.id_cliente,
+              nombre: tarjetaEscaneada.nombre,
+              apellido: tarjetaEscaneada.apellido,
+            },
+            tarjetaActual: {
+              uuid: tarjetaEscaneada.uuid,
+              tipo: tarjetaEscaneada.tipo_suscripcion,
+              nivel: tarjetaEscaneada.nivel_suscripcion,
+            },
+            esMismoCliente: false,
+          },
+        });
+      }
+
+      // Caso 2: Es la misma tarjeta del mismo cliente (actualización de tipo)
+      if (esLaMismaTarjeta) {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: `Esta tarjeta ya pertenece a este cliente. Se resetearán todos los datos de la tarjeta.`,
+          data: {
+            clienteActual: {
+              id: cliente.id_cliente,
+              nombre: cliente.nombre,
+              apellido: cliente.apellido,
+            },
+            tarjetaActual: {
+              uuid: tarjetaActualCliente.uuid,
+              tipo: tarjetaActualCliente.tipo_suscripcion,
+              nivel: tarjetaActualCliente.nivel_suscripcion,
+            },
+            esMismoCliente: true,
+          },
+        });
+      }
+
+      // Caso 3: El cliente ya tiene una tarjeta DIFERENTE
+      if (tarjetaActualCliente && !esLaMismaTarjeta) {
+        await connection.rollback();
+        return res.status(409).json({
+          success: false,
+          message: `El cliente ${cliente.nombre} ${cliente.apellido} ya tiene una tarjeta asociada`,
+          data: {
+            clienteActual: {
+              id: cliente.id_cliente,
+              nombre: cliente.nombre,
+              apellido: cliente.apellido,
+            },
+            tarjetaActual: {
+              uuid: tarjetaActualCliente.uuid,
+              tipo: tarjetaActualCliente.tipo_suscripcion,
+              nivel: tarjetaActualCliente.nivel_suscripcion,
+            },
+            clienteNuevoYaTieneTarjeta: true,
+          },
+        });
+      }
+    }
+
+    // 7. Si llegamos aquí, proceder con las desvinculaciones necesarias
+    // Desvincular tarjeta escaneada de su dueño anterior (si tiene)
+    if (
+      tarjetaEscaneada &&
+      tarjetaEscaneada.id_cliente !== null &&
+      tarjetaEscaneada.id_cliente !== parseInt(idCliente)
+    ) {
+      console.log(
+        `[ASOCIAR] Desvinculando tarjeta ${tarjetaEscaneada.uuid} del cliente ${tarjetaEscaneada.id_cliente}`
+      );
+      await connection.execute(
+        `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
+        [tarjetaEscaneada.id_cliente]
+      );
+    }
+
+    // Desvincular tarjeta actual del cliente nuevo (si tiene una diferente)
+    if (tarjetaActualCliente && !esLaMismaTarjeta) {
+      console.log(
+        `[ASOCIAR] Desvinculando tarjeta anterior ${tarjetaActualCliente.uuid} del cliente ${idCliente}`
+      );
+      await connection.execute(
+        `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
+        [idCliente]
+      );
+    }
+
+    // Variables para tracking
     let tarjetaAnteriorCliente =
-      !esLaMismaTarjeta && cliente.id_tarjeta !== null
-        ? cliente.id_tarjeta
-        : null;
+      tarjetaActualCliente && !esLaMismaTarjeta ? cliente.id_tarjeta : null;
 
     // 4. Verificar que el tipo de suscripción existe
     const [tipoRows] = await connection.execute(
@@ -633,83 +719,18 @@ const asociarTarjetaCliente = async (req, res) => {
       }
     }
 
-    // 6. Buscar si ya existe una tarjeta física con ese UID
-    const uidNormalizado = String(rfidUid).toUpperCase().trim();
-    const [tarjetaExistenteRows] = await connection.execute(
-      `SELECT t.id_tarjeta, c.id_cliente, c.nombre, c.apellido 
-       FROM Tarjeta t
-       LEFT JOIN Cliente c ON c.id_tarjeta = t.id_tarjeta
-       WHERE t.uuid = ?`,
-      [uidNormalizado]
-    );
-
+    // 8. Determinar si la tarjeta existe y su ID
     let idTarjeta;
-    let tarjetaYaExistia = false;
-    let tarjetaEstabaAsociada = false;
-    let idClienteAnteriorTarjeta = null;
+    let tarjetaYaExistia = tarjetaEscaneada !== null;
+    let tarjetaEstabaAsociada =
+      tarjetaEscaneada && tarjetaEscaneada.id_cliente !== null;
+    let idClienteAnteriorTarjeta = tarjetaEscaneada
+      ? tarjetaEscaneada.id_cliente
+      : null;
 
-    if (tarjetaExistenteRows.length > 0) {
-      const tarjetaExistente = tarjetaExistenteRows[0];
-      tarjetaYaExistia = true;
-
-      // Verificar si la tarjeta ya está asociada a algún cliente
-      if (tarjetaExistente.id_cliente !== null) {
-        tarjetaEstabaAsociada = true;
-        idClienteAnteriorTarjeta = tarjetaExistente.id_cliente;
-
-        // Si es la misma tarjeta del mismo cliente, requiere confirmación igual
-        if (
-          esLaMismaTarjeta &&
-          tarjetaExistente.id_cliente === parseInt(idCliente)
-        ) {
-          console.log(
-            `[ASOCIAR] Mismo cliente actualizando su propia tarjeta - requiere confirmación`
-          );
-
-          if (!forzarDesvinculacion) {
-            await connection.rollback();
-            return res.status(409).json({
-              success: false,
-              message: `Esta tarjeta ya pertenece a este cliente. Se resetearán todos los datos de la tarjeta.`,
-              data: {
-                clienteActual: {
-                  id: tarjetaExistente.id_cliente,
-                  nombre: tarjetaExistente.nombre,
-                  apellido: tarjetaExistente.apellido,
-                },
-                esMismoCliente: true,
-              },
-            });
-          }
-          // Si se confirma, continuar con la actualización
-        } else {
-          // Es otro cliente diferente
-          if (!forzarDesvinculacion) {
-            await connection.rollback();
-            return res.status(409).json({
-              success: false,
-              message: `Esta tarjeta ya está asociada al cliente ${tarjetaExistente.nombre} ${tarjetaExistente.apellido}`,
-              data: {
-                clienteActual: {
-                  id: tarjetaExistente.id_cliente,
-                  nombre: tarjetaExistente.nombre,
-                  apellido: tarjetaExistente.apellido,
-                },
-                esMismoCliente: false,
-              },
-            });
-          }
-
-          // Si se fuerza, desvincular del cliente anterior
-          await connection.execute(
-            `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
-            [tarjetaExistente.id_cliente]
-          );
-        }
-      }
-
-      // La tarjeta existe (ahora libre) → Actualizar tipo, nivel y saldo
-      idTarjeta = tarjetaExistente.id_tarjeta;
+    if (tarjetaYaExistia) {
+      // La tarjeta existe → Actualizar tipo, nivel y saldo
+      idTarjeta = tarjetaEscaneada.id_tarjeta;
 
       const saldoFinal =
         tipoSuscripcion.nombre === "PREPAGA" && saldoInicial !== undefined
