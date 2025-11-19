@@ -44,9 +44,9 @@ const getUsuarios = async (req, res) => {
     );
 
     // Agregar URL completa de las imágenes de perfil
-    const usuariosConImagenes = mapUsuariosRows(rows).map(usuario => {
+    const usuariosConImagenes = mapUsuariosRows(rows).map((usuario) => {
       if (usuario.fotoPerfil) {
-        usuario.fotoPerfilUrl = getFileUrl(req, usuario.fotoPerfil, 'usuarios');
+        usuario.fotoPerfilUrl = getFileUrl(req, usuario.fotoPerfil, "usuarios");
       }
       return usuario;
     });
@@ -92,7 +92,11 @@ const getUsuarioPorId = async (req, res) => {
 
     const usuarioMapeado = mapUsuarioRow(rows[0]);
     if (usuarioMapeado.fotoPerfil) {
-      usuarioMapeado.fotoPerfilUrl = getFileUrl(req, usuarioMapeado.fotoPerfil, 'usuarios');
+      usuarioMapeado.fotoPerfilUrl = getFileUrl(
+        req,
+        usuarioMapeado.fotoPerfil,
+        "usuarios"
+      );
     }
 
     res.json({
@@ -112,7 +116,7 @@ const getUsuarioPorId = async (req, res) => {
 
 const crearUsuario = async (req, res) => {
   try {
-    const { nombreUsuario, contrasena, activo } = req.body;
+    const { nombreUsuario, contrasena, activo, roles } = req.body;
     const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
 
     if (!nombreUsuario || !contrasena) {
@@ -130,16 +134,44 @@ const crearUsuario = async (req, res) => {
       [nombreUsuario, hashedPassword, activoNormalizado, fotoPerfil]
     );
 
-    const nuevoUsuario = mapUsuarioRow({
-      id_usuario: result.insertId,
-      nombre_usuario: nombreUsuario,
-      activo: activoNormalizado,
-      foto_perfil: fotoPerfil,
-      roles: [],
-    });
+    const userId = result.insertId;
+
+    // Asignar roles si se proporcionaron
+    if (roles && Array.isArray(roles) && roles.length > 0) {
+      for (const nombreRol of roles) {
+        const rol = await obtenerRolPorNombre(nombreRol);
+        if (rol) {
+          await promisePool.execute(
+            "INSERT INTO UsuarioRol (id_usuario, id_rol) VALUES (?, ?)",
+            [userId, rol.id_rol]
+          );
+        }
+      }
+    }
+
+    // Obtener el usuario completo con roles
+    const [rows] = await promisePool.execute(
+      `SELECT u.id_usuario,
+        u.nombre_usuario,
+        u.activo,
+        u.foto_perfil,
+        GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
+       FROM Usuario u
+       LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
+       LEFT JOIN Rol r ON r.id_rol = ur.id_rol
+       WHERE u.id_usuario = ?
+       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`,
+      [userId]
+    );
+
+    const nuevoUsuario = mapUsuarioRow(rows[0]);
 
     if (nuevoUsuario.fotoPerfil) {
-      nuevoUsuario.fotoPerfilUrl = getFileUrl(req, nuevoUsuario.fotoPerfil, 'usuarios');
+      nuevoUsuario.fotoPerfilUrl = getFileUrl(
+        req,
+        nuevoUsuario.fotoPerfil,
+        "usuarios"
+      );
     }
 
     res.status(201).json({
@@ -168,7 +200,7 @@ const crearUsuario = async (req, res) => {
 const actualizarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombreUsuario, contrasena, activo } = req.body;
+    const { nombreUsuario, contrasena, activo, roles } = req.body;
 
     // Obtener el usuario existente para manejar la imagen anterior
     const [usuarioExistente] = await promisePool.execute(
@@ -206,41 +238,79 @@ const actualizarUsuario = async (req, res) => {
     if (req.file) {
       // Si hay una imagen anterior, eliminarla
       if (usuarioExistente[0].foto_perfil) {
-        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'usuarios', usuarioExistente[0].foto_perfil);
+        const rutaImagenAnterior = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "usuarios",
+          usuarioExistente[0].foto_perfil
+        );
         await deleteFile(rutaImagenAnterior);
       }
-      
+
       campos.push("foto_perfil = ?");
       valores.push(req.file.filename);
-    } else if (req.body.eliminarFotoPerfil === "true" || req.body.eliminarFotoPerfil === true) {
+    } else if (
+      req.body.eliminarFotoPerfil === "true" ||
+      req.body.eliminarFotoPerfil === true
+    ) {
       // Si se solicita eliminar la foto de perfil y no se subió una nueva
       if (usuarioExistente[0].foto_perfil) {
-        const rutaImagenAnterior = path.join(__dirname, '..', 'uploads', 'usuarios', usuarioExistente[0].foto_perfil);
+        const rutaImagenAnterior = path.join(
+          __dirname,
+          "..",
+          "uploads",
+          "usuarios",
+          usuarioExistente[0].foto_perfil
+        );
         await deleteFile(rutaImagenAnterior);
       }
       campos.push("foto_perfil = ?");
       valores.push(null);
     }
 
-    if (campos.length === 0) {
+    // Actualizar roles si se proporcionaron
+    if (roles !== undefined && Array.isArray(roles)) {
+      // Eliminar roles existentes
+      await promisePool.execute("DELETE FROM UsuarioRol WHERE id_usuario = ?", [
+        id,
+      ]);
+
+      // Asignar nuevos roles
+      if (roles.length > 0) {
+        for (const nombreRol of roles) {
+          const rol = await obtenerRolPorNombre(nombreRol);
+          if (rol) {
+            await promisePool.execute(
+              "INSERT INTO UsuarioRol (id_usuario, id_rol) VALUES (?, ?)",
+              [id, rol.id_rol]
+            );
+          }
+        }
+      }
+    }
+
+    if (campos.length === 0 && roles === undefined) {
       return res.status(400).json({
         success: false,
         message: "Debe enviar al menos un campo para actualizar",
       });
     }
 
-    valores.push(id);
+    if (campos.length > 0) {
+      valores.push(id);
 
-    const [result] = await promisePool.execute(
-      `UPDATE Usuario SET ${campos.join(", ")} WHERE id_usuario = ?`,
-      valores
-    );
+      const [result] = await promisePool.execute(
+        `UPDATE Usuario SET ${campos.join(", ")} WHERE id_usuario = ?`,
+        valores
+      );
 
-    if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Usuario no encontrado",
-      });
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Usuario no encontrado",
+        });
+      }
     }
 
     const [rows] = await promisePool.execute(
@@ -259,7 +329,11 @@ const actualizarUsuario = async (req, res) => {
 
     const usuarioActualizado = mapUsuarioRow(rows[0]);
     if (usuarioActualizado.fotoPerfil) {
-      usuarioActualizado.fotoPerfilUrl = getFileUrl(req, usuarioActualizado.fotoPerfil, 'usuarios');
+      usuarioActualizado.fotoPerfilUrl = getFileUrl(
+        req,
+        usuarioActualizado.fotoPerfil,
+        "usuarios"
+      );
     }
 
     res.json({
@@ -302,6 +376,12 @@ const eliminarUsuario = async (req, res) => {
       });
     }
 
+    // Eliminar primero los roles del usuario (foreign key constraint)
+    await promisePool.execute("DELETE FROM UsuarioRol WHERE id_usuario = ?", [
+      id,
+    ]);
+
+    // Ahora eliminar el usuario
     const [result] = await promisePool.execute(
       "DELETE FROM Usuario WHERE id_usuario = ?",
       [id]
@@ -316,7 +396,13 @@ const eliminarUsuario = async (req, res) => {
 
     // Eliminar la imagen asociada si existe
     if (usuarioAEliminar[0].foto_perfil) {
-      const rutaImagen = path.join(__dirname, '..', 'uploads', 'usuarios', usuarioAEliminar[0].foto_perfil);
+      const rutaImagen = path.join(
+        __dirname,
+        "..",
+        "uploads",
+        "usuarios",
+        usuarioAEliminar[0].foto_perfil
+      );
       await deleteFile(rutaImagen);
     }
 
