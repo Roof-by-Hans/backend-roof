@@ -23,6 +23,7 @@ const transaccionRoutes = require("./routes/transaccionRoutes");
 const mesaGrupoRoutes = require("./routes/mesaGrupoRoutes");
 const mesaRoutes = require("./routes/mesaRoutes");
 const cajaDiariaRoutes = require("./routes/cajaDiariaRoutes");
+const mozoRoutes = require("./routes/mozoRoutes");
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
@@ -45,12 +46,13 @@ app.use(express.urlencoded({ extended: true }));
 //   - http://localhost:3000/uploads/usuarios/usuario-1234567890-123456789.jpg
 //   - http://localhost:3000/uploads/clientes/cliente-1234567890-123456789.jpg
 // Esto evita tener que hacer consultas al servidor por cada imagen
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/auth-cliente", authClienteRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/mozos", mozoRoutes);
 app.use("/api/clientes", clienteRoutes);
 app.use("/api/categorias-producto", categoriaProductoRoutes);
 app.use("/api/productos", productoRoutes);
@@ -79,28 +81,28 @@ app.get("/api/file-upload-info", (req, res) => {
       uploadPaths: {
         productos: "/uploads/productos/",
         usuarios: "/uploads/usuarios/",
-        clientes: "/uploads/clientes/"
+        clientes: "/uploads/clientes/",
       },
       fileFields: {
         productos: "imagen",
         usuarios: "fotoPerfil",
-        clientes: "fotoPerfil"
+        clientes: "fotoPerfil",
       },
       endpoints: {
         productos: {
           create: "POST /api/productos",
-          update: "PUT /api/productos/{id}"
+          update: "PUT /api/productos/{id}",
         },
         usuarios: {
-          create: "POST /api/usuarios", 
-          update: "PUT /api/usuarios/{id}"
+          create: "POST /api/usuarios",
+          update: "PUT /api/usuarios/{id}",
         },
         clientes: {
           create: "POST /api/clientes",
-          update: "PUT /api/clientes/{id}"
-        }
-      }
-    }
+          update: "PUT /api/clientes/{id}",
+        },
+      },
+    },
   });
 });
 
@@ -128,7 +130,7 @@ app.use((err, req, res, next) => {
 const io = initializeWebSocket(server);
 
 // Hacer que io esté disponible en las rutas (middleware)
-app.set('io', io);
+app.set("io", io);
 console.log("🔌 WebSocket configurado y disponible en rutas");
 
 // Iniciar el servidor
@@ -137,7 +139,7 @@ server.listen(PORT, async () => {
   console.log(
     `📚 Documentación disponible en http://localhost:${PORT}/api-docs`
   );
-  
+
   await testConnection();
 });
 
