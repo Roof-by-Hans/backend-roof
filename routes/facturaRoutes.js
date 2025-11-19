@@ -6,6 +6,8 @@ const {
   getFacturasPorCliente,
   getProductosConsumidosPorCliente,
   getDetallesFactura,
+  getFacturasPendientes,
+  updateEstadoFactura,
 } = require("../controllers/facturaController");
 const {
   authenticate,
@@ -427,6 +429,40 @@ router.get(
 
 /**
  * @swagger
+ * /api/facturas/pendientes:
+ *   get:
+ *     summary: Obtener todas las facturas pendientes
+ *     description: Obtiene todas las facturas con estado PENDIENTE, útil para gestionar pedidos activos
+ *     tags: [Facturas]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Lista de facturas pendientes obtenida correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Factura'
+ *                 message:
+ *                   type: string
+ *                   example: "Facturas pendientes obtenidas correctamente"
+ *       401:
+ *         description: No autorizado
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.get("/pendientes", authenticate, authorizeAdmin, getFacturasPendientes);
+
+/**
+ * @swagger
  * /api/facturas/{id}:
  *   get:
  *     summary: Obtener una factura por ID con sus detalles
@@ -464,5 +500,62 @@ router.get(
  *         description: Error interno del servidor
  */
 router.get("/:id", authenticate, authorizeAdmin, getFacturaPorId);
+
+/**
+ * @swagger
+ * /api/facturas/{id}/estado:
+ *   patch:
+ *     summary: Actualizar estado de una factura (sin pagar)
+ *     description: Permite cambiar el estado de una factura entre PENDIENTE y ANULADA
+ *     tags: [Facturas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la factura
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - estado
+ *             properties:
+ *               estado:
+ *                 type: string
+ *                 enum: [PENDIENTE, ANULADA]
+ *                 description: Nuevo estado de la factura
+ *                 example: "ANULADA"
+ *     responses:
+ *       200:
+ *         description: Estado actualizado correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Factura'
+ *                 message:
+ *                   type: string
+ *                   example: "Estado de factura actualizado correctamente"
+ *       400:
+ *         description: Estado inválido
+ *       404:
+ *         description: Factura no encontrada
+ *       401:
+ *         description: No autorizado
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.patch("/:id/estado", authenticate, authorizeAdmin, updateEstadoFactura);
 
 module.exports = router;

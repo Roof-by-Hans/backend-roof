@@ -6,20 +6,22 @@
 // Emitters de Mesas
 const mesasEmitter = require('./emitters/mesasEmitter');
 
+// Emitters de Pedidos
+const pedidosEmitter = require('./emitters/pedidosEmitter');
+
 // Aquí puedes exportar más emitters cuando los crees:
 // const productosEmitter = require('./emitters/productosEmitter');
-// const pedidosEmitter = require('./emitters/pedidosEmitter');
 // const clientesEmitter = require('./emitters/clientesEmitter');
 
 module.exports = {
   // Mesas
   ...mesasEmitter,
   
+  // Pedidos
+  ...pedidosEmitter,
+  
   // Productos
   // ...productosEmitter,
-  
-  // Pedidos
-  // ...pedidosEmitter,
   
   // Clientes
   // ...clientesEmitter,

@@ -70,10 +70,10 @@ const initializeWebSocket = (server) => {
     // Registrar handlers de diferentes módulos de forma escalable
     // Cada handler se encarga de sus propios eventos
     require('../websocket/handlers/mesasHandler')(io, socket);
+    require('../websocket/handlers/pedidosHandler')(io, socket);
     
     // Aquí puedes agregar más handlers para otros módulos:
     // require('../websocket/handlers/productosHandler')(io, socket);
-    // require('../websocket/handlers/pedidosHandler')(io, socket);
     // require('../websocket/handlers/clientesHandler')(io, socket);
     // require('../websocket/handlers/notificacionesHandler')(io, socket);
 

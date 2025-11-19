@@ -547,6 +547,93 @@ const actualizarPosicionMesa = async (req, res) => {
   }
 };
 
+/**
+ * Obtener factura activa de una mesa
+ */
+const getFacturaActivaMesa = async (req, res) => {
+  try {
+    const idMesa = sanitizeId(req.params.id);
+
+    if (!idMesa) {
+      return respondError(res, 400, "El identificador de la mesa no es válido");
+    }
+
+    // Verificar que la mesa existe
+    const mesa = await obtenerMesaConGrupo(idMesa);
+
+    if (!mesa) {
+      return respondError(res, 404, "Mesa no encontrada");
+    }
+
+    // Buscar factura pendiente de la mesa
+    const [facturaRows] = await promisePool.execute(
+      `SELECT f.id_factura,
+              f.id_cliente,
+              f.id_mesa,
+              f.id_grupo,
+              f.fecha,
+              f.estado,
+              f.total,
+              c.nombre AS nombre_cliente,
+              c.apellido AS apellido_cliente,
+              c.email AS email_cliente,
+              m.nombre AS nombre_mesa,
+              g.nombre AS nombre_grupo
+       FROM Factura f
+       INNER JOIN Cliente c ON c.id_cliente = f.id_cliente
+       LEFT JOIN Mesa m ON m.id_mesa = f.id_mesa
+       LEFT JOIN GrupoMesas g ON g.id_grupo = f.id_grupo
+       WHERE f.id_mesa = ? AND f.estado = 'PENDIENTE'
+       ORDER BY f.fecha DESC
+       LIMIT 1`,
+      [idMesa]
+    );
+
+    if (facturaRows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No hay factura activa para esta mesa",
+      });
+    }
+
+    // Obtener los detalles de la factura
+    const { mapDetalleFacturaRows } = require("../helpers/detalleFacturaMapper");
+    const { mapFacturaConDetalles } = require("../helpers/facturaMapper");
+    
+    const [detallesRows] = await promisePool.execute(
+      `SELECT df.id_detalle,
+              df.id_factura,
+              df.id_producto,
+              df.cantidad,
+              df.precio_unitario,
+              df.subtotal,
+              p.nombre AS nombre_producto,
+              p.descripcion AS descripcion_producto,
+              p.foto_principal AS foto_principal_producto,
+              cp.nombre AS nombre_categoria
+       FROM DetalleFactura df
+       INNER JOIN Producto p ON p.id_producto = df.id_producto
+       LEFT JOIN CategoriaProducto cp ON cp.id_categoria = p.id_categoria
+       WHERE df.id_factura = ?
+       ORDER BY df.id_detalle`,
+      [facturaRows[0].id_factura]
+    );
+
+    const factura = mapFacturaConDetalles(facturaRows[0], detallesRows);
+
+    res.json({
+      success: true,
+      data: factura,
+      message: "Factura activa obtenida correctamente",
+    });
+  } catch (error) {
+    console.error("Error al obtener factura activa de la mesa:", error);
+    return respondError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   listarMesas,
   obtenerMesa,
@@ -558,4 +645,5 @@ module.exports = {
   liberarMesa,
   obtenerEstadisticasMesas,
   actualizarPosicionMesa,
+  getFacturaActivaMesa,
 };

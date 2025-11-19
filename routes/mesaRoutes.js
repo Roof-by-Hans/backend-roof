@@ -10,6 +10,7 @@ const {
   liberarMesa,
   obtenerEstadisticasMesas,
   actualizarPosicionMesa,
+  getFacturaActivaMesa,
 } = require("../controllers/mesaController");
 const { authenticate } = require("../middlewares/authMiddleware");
 
@@ -466,5 +467,59 @@ router.post("/:id/liberar", authenticate, liberarMesa);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.patch("/:id/posicion", authenticate, actualizarPosicionMesa);
+
+/**
+ * @swagger
+ * /api/mesas/{id}/factura-activa:
+ *   get:
+ *     summary: Obtener factura activa de una mesa
+ *     description: Obtiene la factura pendiente asociada a una mesa específica, útil para gestionar pedidos
+ *     tags: [Mesas]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la mesa
+ *     responses:
+ *       200:
+ *         description: Factura activa obtenida correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Factura'
+ *                 message:
+ *                   type: string
+ *                   example: "Factura activa obtenida correctamente"
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         description: Mesa no encontrada o sin factura activa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "No hay factura activa para esta mesa"
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/:id/factura-activa", authenticate, getFacturaActivaMesa);
 
 module.exports = router;
