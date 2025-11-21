@@ -5,6 +5,7 @@ const {
   obtenerGrupo,
   disolverGrupo,
   modificarMesasGrupo,
+  getFacturaActivaGrupo,
 } = require("../controllers/mesaGrupoController");
 const { authenticate } = require("../middlewares/authMiddleware");
 
@@ -342,5 +343,59 @@ router.delete("/grupos/:id", authenticate, disolverGrupo);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.patch("/grupos/:id/mesas", authenticate, modificarMesasGrupo);
+
+/**
+ * @swagger
+ * /api/mesas-grupo/grupos/{id}/factura-activa:
+ *   get:
+ *     summary: Obtener factura activa de un grupo de mesas
+ *     description: Obtiene la factura pendiente asociada a un grupo de mesas, útil para gestionar pedidos compartidos
+ *     tags: [MesasGrupo]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID del grupo de mesas
+ *     responses:
+ *       200:
+ *         description: Factura activa del grupo obtenida correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Factura'
+ *                 message:
+ *                   type: string
+ *                   example: "Factura activa del grupo obtenida correctamente"
+ *       400:
+ *         description: ID de grupo inválido
+ *       401:
+ *         description: No autorizado
+ *       404:
+ *         description: Grupo no encontrado o sin factura activa
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "No hay factura activa para este grupo"
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/grupos/:id/factura-activa", authenticate, getFacturaActivaGrupo);
 
 module.exports = router;

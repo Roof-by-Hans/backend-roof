@@ -339,10 +339,127 @@ const getDetallesFactura = async (req, res) => {
   }
 };
 
+/**
+ * Obtener todas las facturas pendientes
+ */
+const getFacturasPendientes = async (req, res) => {
+  try {
+    const query = `
+      SELECT f.id_factura,
+             f.id_cliente,
+             f.id_mesa,
+             f.id_grupo,
+             f.fecha,
+             f.estado,
+             f.total,
+             c.nombre AS nombre_cliente,
+             c.apellido AS apellido_cliente,
+             c.email AS email_cliente,
+             m.nombre AS nombre_mesa,
+             g.nombre AS nombre_grupo
+      FROM Factura f
+      INNER JOIN Cliente c ON c.id_cliente = f.id_cliente
+      LEFT JOIN Mesa m ON m.id_mesa = f.id_mesa
+      LEFT JOIN GrupoMesas g ON g.id_grupo = f.id_grupo
+      WHERE f.estado = 'PENDIENTE'
+      ORDER BY f.fecha DESC
+    `;
+
+    const [rows] = await promisePool.execute(query);
+
+    res.json({
+      success: true,
+      data: mapFacturaRows(rows),
+      message: "Facturas pendientes obtenidas correctamente",
+    });
+  } catch (error) {
+    console.error("Error al obtener facturas pendientes:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Actualizar estado de una factura (sin pagar)
+ */
+const updateEstadoFactura = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { estado } = req.body;
+
+    // Validar que el estado es válido
+    if (!estado || !["PENDIENTE", "ANULADA"].includes(estado.toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: "Estado inválido. Estados permitidos: PENDIENTE, ANULADA",
+      });
+    }
+
+    // Verificar que la factura existe
+    const [facturaCheck] = await promisePool.execute(
+      `SELECT id_factura, estado FROM Factura WHERE id_factura = ?`,
+      [id]
+    );
+
+    if (facturaCheck.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Factura no encontrada",
+      });
+    }
+
+    // Actualizar el estado
+    await promisePool.execute(
+      `UPDATE Factura SET estado = ? WHERE id_factura = ?`,
+      [estado.toUpperCase(), id]
+    );
+
+    // Obtener la factura actualizada
+    const [facturaRows] = await promisePool.execute(
+      `SELECT f.id_factura,
+              f.id_cliente,
+              f.id_mesa,
+              f.id_grupo,
+              f.fecha,
+              f.estado,
+              f.total,
+              c.nombre AS nombre_cliente,
+              c.apellido AS apellido_cliente,
+              c.email AS email_cliente,
+              m.nombre AS nombre_mesa,
+              g.nombre AS nombre_grupo
+       FROM Factura f
+       INNER JOIN Cliente c ON c.id_cliente = f.id_cliente
+       LEFT JOIN Mesa m ON m.id_mesa = f.id_mesa
+       LEFT JOIN GrupoMesas g ON g.id_grupo = f.id_grupo
+       WHERE f.id_factura = ?`,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      data: mapFacturaRow(facturaRows[0]),
+      message: "Estado de factura actualizado correctamente",
+    });
+  } catch (error) {
+    console.error("Error al actualizar estado de factura:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getFacturas,
   getFacturaPorId,
   getFacturasPorCliente,
   getProductosConsumidosPorCliente,
   getDetallesFactura,
+  getFacturasPendientes,
+  updateEstadoFactura,
 };
