@@ -53,36 +53,26 @@ const initializeWebSocket = (server) => {
     // Configuraciones adicionales para mejor rendimiento
     pingTimeout: 60000,
     pingInterval: 25000,
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    // Compresión de mensajes WebSocket
+    perMessageDeflate: {
+      threshold: 1024 // Comprimir mensajes mayores a 1KB
+    },
+    maxHttpBufferSize: 1e6, // 1MB
+    allowEIO3: true
   });
 
-  // Aplicar middleware de autenticación
   io.use(socketAuthMiddleware);
 
-  // Manejo de conexiones
   io.on('connection', (socket) => {
-    const userInfo = socket.isAuthenticated 
-      ? `Usuario: ${socket.userName} (ID: ${socket.userId}, Rol: ${socket.userRole})`
-      : 'Invitado (sin autenticar)';
-    
-    console.log(`✅ Cliente conectado: ${socket.id} - ${userInfo}`);
-
-    // Registrar handlers de diferentes módulos de forma escalable
-    // Cada handler se encarga de sus propios eventos
+    // Registrar handlers (solo una vez cada uno)
     require('../websocket/handlers/mesasHandler')(io, socket);
     require('../websocket/handlers/pedidosHandler')(io, socket);
-    
-    // Aquí puedes agregar más handlers para otros módulos:
-    // require('../websocket/handlers/productosHandler')(io, socket);
-    // require('../websocket/handlers/clientesHandler')(io, socket);
-    // require('../websocket/handlers/notificacionesHandler')(io, socket);
 
-    // Manejo de desconexión
     socket.on('disconnect', (reason) => {
-      console.log(`❌ Cliente desconectado: ${socket.id} - Razón: ${reason}`);
+      // Cliente desconectado silenciosamente
     });
 
-    // Manejo de errores
     socket.on('error', (error) => {
       console.error(`⚠️ Error en socket ${socket.id}:`, error);
     });

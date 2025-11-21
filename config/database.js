@@ -1,5 +1,4 @@
 const mysql = require("mysql2");
-require("dotenv").config();
 
 // Configuración del pool de conexiones
 const poolConfig = {
@@ -12,6 +11,12 @@ const poolConfig = {
   connectionLimit: 10,
   queueLimit: 0,
   charset: "utf8mb4",
+  // Optimizaciones de rendimiento
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+  connectTimeout: 10000,
+  maxIdle: 10,
+  idleTimeout: 60000,
 };
 
 const pool = mysql.createPool(poolConfig);

@@ -28,13 +28,9 @@ const obtenerMesasConGrupos = async () => {
 
 module.exports = (io, socket) => {
   
-  /**
-   * Evento: Unirse a la sala de mesas
-   * El cliente recibirá actualizaciones en tiempo real de todas las mesas
-   */
   socket.on('join:mesas', async () => {
     socket.join('mesas');
-    console.log(`📡 Cliente ${socket.id} (Usuario: ${socket.userId}) se unió a la sala de mesas`);
+    socket.join('mesas');
     
     // Enviar lista completa de mesas con grupos al cliente que se conecta
     const mesas = await obtenerMesasConGrupos();
@@ -51,12 +47,9 @@ module.exports = (io, socket) => {
     });
   });
 
-  /**
-   * Evento: Salir de la sala de mesas
-   */
   socket.on('leave:mesas', () => {
     socket.leave('mesas');
-    console.log(`📡 Cliente ${socket.id} salió de la sala de mesas`);
+    socket.leave('mesas');
     
     socket.emit('left:mesas', { 
       message: 'Desconectado de actualizaciones de mesas',
@@ -64,10 +57,6 @@ module.exports = (io, socket) => {
     });
   });
 
-  /**
-   * Evento: Obtener clientes conectados a la sala de mesas
-   * Útil para debugging o mostrar usuarios activos
-   */
   socket.on('mesas:get-connected-clients', async () => {
     try {
       const sockets = await io.in('mesas').fetchSockets();
@@ -89,10 +78,6 @@ module.exports = (io, socket) => {
     }
   });
 
-  /**
-   * Evento: Unirse a una mesa específica
-   * Permite recibir actualizaciones de una mesa en particular
-   */
   socket.on('join:mesa', (data) => {
     const { mesaId } = data;
     
@@ -105,7 +90,7 @@ module.exports = (io, socket) => {
 
     const room = `mesa:${mesaId}`;
     socket.join(room);
-    console.log(`📡 Cliente ${socket.id} se unió a la sala de la mesa ${mesaId}`);
+    socket.join(room);
     
     socket.emit('joined:mesa', {
       message: `Conectado a actualizaciones de la mesa ${mesaId}`,
@@ -114,9 +99,6 @@ module.exports = (io, socket) => {
     });
   });
 
-  /**
-   * Evento: Salir de una mesa específica
-   */
   socket.on('leave:mesa', (data) => {
     const { mesaId } = data;
     
@@ -129,7 +111,7 @@ module.exports = (io, socket) => {
 
     const room = `mesa:${mesaId}`;
     socket.leave(room);
-    console.log(`📡 Cliente ${socket.id} salió de la sala de la mesa ${mesaId}`);
+    socket.leave(room);
     
     socket.emit('left:mesa', {
       message: `Desconectado de actualizaciones de la mesa ${mesaId}`,
@@ -138,9 +120,6 @@ module.exports = (io, socket) => {
     });
   });
 
-  /**
-   * Evento: Solicitar el estado actual de una mesa
-   */
   socket.on('mesa:get-estado', async (data) => {
     const { mesaId } = data;
     

@@ -125,16 +125,30 @@ const handleMulterError = (error, req, res, next) => {
   next(error);
 };
 
-// Función para eliminar archivo si existe
-const deleteFile = (filePath) => {
-  return new Promise((resolve) => {
-    fs.unlink(filePath, (err) => {
-      if (err && err.code !== 'ENOENT') {
-        console.error('Error al eliminar archivo:', err);
-      }
-      resolve();
-    });
-  });
+// Función para eliminar archivo si existe (optimizada con async/await)
+const deleteFile = async (filePath) => {
+  try {
+    const fsPromises = require('fs').promises;
+    await fsPromises.access(filePath);
+    await fsPromises.unlink(filePath);
+    return true;
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      console.error('Error al eliminar archivo:', err);
+    }
+    return false;
+  }
+};
+
+// Función para verificar si un archivo existe
+const fileExists = async (filePath) => {
+  try {
+    const fsPromises = require('fs').promises;
+    await fsPromises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 };
 
 // Función para obtener la URL completa del archivo
@@ -154,5 +168,6 @@ module.exports = {
   uploadClient,
   handleMulterError,
   deleteFile,
+  fileExists,
   getFileUrl
 };

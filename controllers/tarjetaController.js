@@ -2,9 +2,6 @@ const { promisePool } = require("../config/database");
 const { mapTarjetaRow, mapTarjetasRows } = require("../helpers/tarjetaMapper");
 const { v4: uuidv4 } = require("uuid");
 
-/**
- * Obtener todas las tarjetas
- */
 const getTarjetas = async (req, res) => {
   try {
     const [rows] = await promisePool.execute(
@@ -37,9 +34,6 @@ const getTarjetas = async (req, res) => {
   }
 };
 
-/**
- * Obtener tarjeta por ID
- */
 const getTarjetaPorId = async (req, res) => {
   try {
     const { id } = req.params;
@@ -81,9 +75,6 @@ const getTarjetaPorId = async (req, res) => {
   }
 };
 
-/**
- * Crear una nueva tarjeta
- */
 const crearTarjeta = async (req, res) => {
   try {
     const { idTipoSuscripcion, idNivelSuscripcion, saldoActual } = req.body;
@@ -175,9 +166,6 @@ const crearTarjeta = async (req, res) => {
   }
 };
 
-/**
- * Actualizar una tarjeta
- */
 const actualizarTarjeta = async (req, res) => {
   try {
     const { id } = req.params;
@@ -284,9 +272,6 @@ const actualizarTarjeta = async (req, res) => {
   }
 };
 
-/**
- * Eliminar una tarjeta
- */
 const eliminarTarjeta = async (req, res) => {
   try {
     const { id } = req.params;
@@ -320,9 +305,6 @@ const eliminarTarjeta = async (req, res) => {
   }
 };
 
-/**
- * Actualizar saldo de una tarjeta
- */
 const actualizarSaldo = async (req, res) => {
   try {
     const { id } = req.params;
@@ -419,10 +401,6 @@ const actualizarSaldo = async (req, res) => {
   }
 };
 
-/**
- * Regenerar UUID de una tarjeta (función de utilidad)
- * Solo para casos especiales de mantenimiento
- */
 const regenerarUUID = async (req, res) => {
   try {
     const { id } = req.params;
@@ -481,10 +459,6 @@ const regenerarUUID = async (req, res) => {
   }
 };
 
-/**
- * Asociar tarjeta RFID a un cliente
- * POST /api/tarjetas/asociar
- */
 const asociarTarjetaCliente = async (req, res) => {
   const connection = await promisePool.getConnection();
   try {
@@ -561,17 +535,6 @@ const asociarTarjetaCliente = async (req, res) => {
       tarjetaActualCliente &&
       tarjetaEscaneada &&
       tarjetaActualCliente.uuid === tarjetaEscaneada.uuid;
-
-    console.log(`[ASOCIAR] Análisis de conflictos:`, {
-      clienteNuevo: { id: cliente.id_cliente, nombre: cliente.nombre },
-      tarjetaEscaneada: tarjetaEscaneada
-        ? { uuid: tarjetaEscaneada.uuid, propietario: tarjetaEscaneada.nombre }
-        : "nueva",
-      tarjetaActualCliente: tarjetaActualCliente
-        ? tarjetaActualCliente.uuid
-        : "ninguna",
-      esLaMismaTarjeta,
-    });
 
     // 6. Manejar conflictos si no se fuerza la desvinculación
     if (!forzarDesvinculacion) {
@@ -653,9 +616,6 @@ const asociarTarjetaCliente = async (req, res) => {
       tarjetaEscaneada.id_cliente !== null &&
       tarjetaEscaneada.id_cliente !== parseInt(idCliente)
     ) {
-      console.log(
-        `[ASOCIAR] Desvinculando tarjeta ${tarjetaEscaneada.uuid} del cliente ${tarjetaEscaneada.id_cliente}`
-      );
       await connection.execute(
         `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
         [tarjetaEscaneada.id_cliente]
@@ -664,9 +624,6 @@ const asociarTarjetaCliente = async (req, res) => {
 
     // Desvincular tarjeta actual del cliente nuevo (si tiene una diferente)
     if (tarjetaActualCliente && !esLaMismaTarjeta) {
-      console.log(
-        `[ASOCIAR] Desvinculando tarjeta anterior ${tarjetaActualCliente.uuid} del cliente ${idCliente}`
-      );
       await connection.execute(
         `UPDATE Cliente SET id_tarjeta = NULL WHERE id_cliente = ?`,
         [idCliente]
@@ -737,14 +694,6 @@ const asociarTarjetaCliente = async (req, res) => {
           ? parseFloat(saldoInicial)
           : 0.0;
 
-      console.log(`[ASOCIAR] Actualizando tarjeta existente ${idTarjeta}:`, {
-        tipo: tipoSuscripcion.nombre,
-        idTipoSuscripcion,
-        idNivelSuscripcion:
-          tipoSuscripcion.nombre === "CREDITO" ? idNivelSuscripcion : null,
-        saldoFinal,
-      });
-
       await connection.execute(
         `UPDATE Tarjeta 
          SET id_tipo_suscripcion = ?, 
@@ -783,18 +732,7 @@ const asociarTarjetaCliente = async (req, res) => {
     const necesitaVincular =
       !esLaMismaTarjeta || tarjetaAnteriorCliente !== null;
 
-    console.log(`[ASOCIAR] Paso 7 - Vincular tarjeta:`, {
-      idTarjeta,
-      idCliente,
-      esLaMismaTarjeta,
-      tarjetaAnteriorCliente,
-      necesitaVincular,
-    });
-
     if (necesitaVincular) {
-      console.log(
-        `[ASOCIAR] ✅ Vinculando tarjeta ${idTarjeta} al cliente ${idCliente}`
-      );
       await connection.execute(
         `UPDATE Cliente SET id_tarjeta = ? WHERE id_cliente = ?`,
         [idTarjeta, idCliente]

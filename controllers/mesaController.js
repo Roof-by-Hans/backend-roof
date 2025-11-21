@@ -132,7 +132,6 @@ const crearNuevaMesa = async (req, res) => {
 
     const mesa = await obtenerMesaConGrupo(result.insertId);
 
-    // Emitir evento WebSocket
     emitMesaCreada(mesa);
 
     res.status(201).json({
@@ -185,7 +184,6 @@ const actualizarMesaExistente = async (req, res) => {
 
     const mesa = await obtenerMesaConGrupo(idMesa);
 
-    // Emitir evento WebSocket
     emitMesaActualizada(mesa);
 
     res.json({
@@ -242,7 +240,6 @@ const eliminarMesaExistente = async (req, res) => {
       connection.release();
     }
 
-    // Emitir evento WebSocket
     emitMesaEliminada(idMesa);
 
     res.json({
@@ -361,7 +358,6 @@ const ocuparMesa = async (req, res) => {
 
     const mesa = await obtenerMesaConGrupo(idMesa);
 
-    // Emitir evento WebSocket
     emitMesaEstadoCambiado(idMesa, {
       estado: 'OCUPADA',
       idClienteActual: mesa.idClienteActual,
@@ -408,7 +404,6 @@ const liberarMesa = async (req, res) => {
 
     const mesa = await obtenerMesaConGrupo(idMesa);
 
-    // Emitir evento WebSocket
     emitMesaEstadoCambiado(idMesa, {
       estado: 'DISPONIBLE',
       idClienteActual: null,
@@ -478,9 +473,6 @@ const obtenerEstadisticasMesas = async (req, res) => {
   }
 };
 
-/**
- * Actualizar posición de una mesa
- */
 const actualizarPosicionMesa = async (req, res) => {
   try {
     const idMesa = sanitizeId(req.params.id);
@@ -518,7 +510,6 @@ const actualizarPosicionMesa = async (req, res) => {
     // Obtener mesa actualizada
     const mesa = await obtenerMesaConGrupo(idMesa);
 
-    // Emitir evento WebSocket
     const io = req.app.get('io');
     if (io) {
       io.to('mesas').emit('mesa:posicion-actualizada', {
@@ -531,7 +522,6 @@ const actualizarPosicionMesa = async (req, res) => {
         },
         timestamp: new Date().toISOString()
       });
-      console.log(`📍 Evento mesa:posicion-actualizada emitido para mesa ${idMesa}`);
     }
 
     res.json({
@@ -547,9 +537,6 @@ const actualizarPosicionMesa = async (req, res) => {
   }
 };
 
-/**
- * Obtener factura activa de una mesa
- */
 const getFacturaActivaMesa = async (req, res) => {
   try {
     const idMesa = sanitizeId(req.params.id);

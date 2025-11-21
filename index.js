@@ -1,7 +1,10 @@
-require("dotenv").config();
+// Cargar configuración de entorno (centralizada)
+require("./config/env");
+
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const compression = require("compression");
 const path = require("path");
 const swaggerUi = require("swagger-ui-express");
 const { swaggerSpec } = require("./config/swagger");
@@ -28,6 +31,7 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
+// Configurar CORS
 app.use(
   cors({
     origin: "*",
@@ -36,16 +40,21 @@ app.use(
   })
 );
 
+// Habilitar compresión HTTP (gzip/deflate)
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+  level: 6 // Balance entre velocidad y compresión
+}));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Servir archivos estáticos (imágenes) de forma pública
-// Las imágenes estarán disponibles en: http://localhost:3000/uploads/{tipo}/{nombre-archivo}
-// Ejemplos:
-//   - http://localhost:3000/uploads/productos/producto-1234567890-123456789.jpg
-//   - http://localhost:3000/uploads/usuarios/usuario-1234567890-123456789.jpg
-//   - http://localhost:3000/uploads/clientes/cliente-1234567890-123456789.jpg
-// Esto evita tener que hacer consultas al servidor por cada imagen
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
@@ -70,7 +79,6 @@ app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
 });
 
-// Endpoint de información sobre carga de archivos
 app.get("/api/file-upload-info", (req, res) => {
   res.json({
     success: true,
@@ -106,7 +114,6 @@ app.get("/api/file-upload-info", (req, res) => {
   });
 });
 
-// Manejo de errores 404
 app.use((req, res) => {
   res.status(404).json({
     error: "Ruta no encontrada",
@@ -114,10 +121,8 @@ app.use((req, res) => {
   });
 });
 
-// Manejo de errores de multer
 app.use(handleMulterError);
 
-// Manejo de errores generales
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({
@@ -126,14 +131,11 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Inicializar WebSocket ANTES de iniciar el servidor
 const io = initializeWebSocket(server);
 
-// Hacer que io esté disponible en las rutas (middleware)
 app.set("io", io);
 console.log("🔌 WebSocket configurado y disponible en rutas");
 
-// Iniciar el servidor
 server.listen(PORT, async () => {
   console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
   console.log(
