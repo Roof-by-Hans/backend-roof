@@ -1,58 +1,12 @@
 const { promisePool } = require("../config/database");
 const { mapCajaDiariaRow } = require("../helpers/cajaDiariaMapper");
-
-const respondError = (res, status, message, extra = {}) => {
-  return res.status(status).json({
-    success: false,
-    message,
-    ...extra,
-  });
-};
-
-const roundCurrency = (value) => {
-  const num = Number(value);
-  if (!Number.isFinite(num)) {
-    return 0;
-  }
-  return Math.round(num * 100) / 100;
-};
-
-const parseDecimalField = (
-  value,
-  { fieldName, required = false, defaultValue = null, allowNegative = true }
-) => {
-  if (value === undefined || value === null) {
-    if (required) {
-      return { error: `El campo ${fieldName} es obligatorio` };
-    }
-    return { value: defaultValue };
-  }
-
-  const normalized = typeof value === "string" ? value.trim() : value;
-
-  if (normalized === "") {
-    if (required) {
-      return { error: `El campo ${fieldName} es obligatorio` };
-    }
-    return { value: defaultValue };
-  }
-
-  const parsed = Number(normalized);
-
-  if (!Number.isFinite(parsed)) {
-    return {
-      error: `El campo ${fieldName} debe ser un número válido`,
-    };
-  }
-
-  if (!allowNegative && parsed < 0) {
-    return {
-      error: `El campo ${fieldName} no puede ser negativo`,
-    };
-  }
-
-  return { value: roundCurrency(parsed) };
-};
+const {
+  roundCurrency,
+  parseDecimalField,
+  sanitizeSubtotales,
+} = require("../helpers/numberHelper");
+const { enviarError, enviarExito } = require("../helpers/responseHelpers");
+const { withTransaction } = require("../helpers/transactionHelper");
 
 const parseMontoInicial = (value) => {
   const { value: parsed, error } = parseDecimalField(value, {
@@ -100,49 +54,11 @@ const buildAuditoriaObservacion = (
   return lines.join("\n");
 };
 
-const sanitizeSubtotales = (subtotales) => {
-  if (!Array.isArray(subtotales)) {
-    return { value: [] };
-  }
-
-  const cleaned = [];
-
-  for (const item of subtotales) {
-    if (typeof item !== "object" || item === null) {
-      return {
-        error: "Cada subtotal por medio de pago debe ser un objeto válido",
-      };
-    }
-
-    const id = Number(item.idMedioPago ?? item.id_medio_pago);
-
-    if (!Number.isInteger(id) || id <= 0) {
-      return {
-        error: "Cada subtotal debe incluir un idMedioPago numérico válido",
-      };
-    }
-
-    const { value: monto, error } = parseDecimalField(item.monto, {
-      fieldName: "monto del subtotal",
-      required: true,
-      allowNegative: false,
-    });
-
-    if (error) {
-      return { error };
-    }
-
-    cleaned.push({ idMedioPago: id, monto });
-  }
-
-  return { value: cleaned };
-};
-
 const abrirCajaDiaria = async (req, res) => {
   const usuarioId = req.user?.id;
 
   if (!usuarioId) {
-    return respondError(
+    return enviarError(
       res,
       401,
       "No se encontró información del usuario en la sesión"
@@ -154,92 +70,71 @@ const abrirCajaDiaria = async (req, res) => {
   );
 
   if (montoInicial === null) {
-    return respondError(res, 400, "El monto inicial debe ser un número válido");
+    return enviarError(res, 400, "El monto inicial debe ser un número válido");
   }
 
   if (montoInicial < 0) {
-    return respondError(res, 400, "El monto inicial no puede ser negativo");
+    return enviarError(res, 400, "El monto inicial no puede ser negativo");
   }
 
-  let connection;
-
   try {
-    connection = await promisePool.getConnection();
-    await connection.beginTransaction();
-
-    const [cajaAbiertaRows] = await connection.execute(
-      `SELECT id_caja, fecha
-         FROM CajaDiaria
-        WHERE estado = 'ABIERTA'
-        FOR UPDATE`
-    );
-
-    if (cajaAbiertaRows.length > 0) {
-      await connection.rollback();
-      return respondError(
-        res,
-        409,
-        "Ya existe una caja diaria abierta. Debe cerrarla antes de abrir una nueva"
+    const caja = await withTransaction(async (connection) => {
+      const [cajaAbiertaRows] = await connection.execute(
+        `SELECT id_caja, fecha
+           FROM CajaDiaria
+          WHERE estado = 'ABIERTA'
+          FOR UPDATE`
       );
-    }
 
-    const [insertResult] = await connection.execute(
-      `INSERT INTO CajaDiaria (
-         fecha,
-         fecha_apertura,
-         monto_inicial,
-         estado,
-         creado_por
-       )
-    VALUES (CURDATE(), NOW(), ?, 'ABIERTA', ?)`,
-      [montoInicial, usuarioId]
-    );
-
-    const [nuevaCajaRows] = await connection.execute(
-      `SELECT id_caja, fecha, fecha_apertura, fecha_cierre,
-              monto_inicial, monto_final, estado, creado_por, cerrado_por
-         FROM CajaDiaria
-        WHERE id_caja = ?`,
-      [insertResult.insertId]
-    );
-
-    await connection.commit();
-
-    const caja = mapCajaDiariaRow(nuevaCajaRows[0]);
-
-    return res.status(201).json({
-      success: true,
-      message: "Caja diaria abierta correctamente",
-      data: caja,
-    });
-  } catch (error) {
-    if (connection) {
-      try {
-        await connection.rollback();
-      } catch (rollbackError) {
-        console.error(
-          "Error al revertir la transacción de caja diaria:",
-          rollbackError
+      if (cajaAbiertaRows.length > 0) {
+        const error = new Error(
+          "Ya existe una caja diaria abierta. Debe cerrarla antes de abrir una nueva"
         );
+        error.statusCode = 409;
+        throw error;
       }
-    }
 
+      const [insertResult] = await connection.execute(
+        `INSERT INTO CajaDiaria (
+           fecha,
+           fecha_apertura,
+           monto_inicial,
+           estado,
+           creado_por
+         )
+      VALUES (CURDATE(), NOW(), ?, 'ABIERTA', ?)`,
+        [montoInicial, usuarioId]
+      );
+
+      const [nuevaCajaRows] = await connection.execute(
+        `SELECT id_caja, fecha, fecha_apertura, fecha_cierre,
+                monto_inicial, monto_final, estado, creado_por, cerrado_por
+           FROM CajaDiaria
+          WHERE id_caja = ?`,
+        [insertResult.insertId]
+      );
+
+      return mapCajaDiariaRow(nuevaCajaRows[0]);
+    });
+
+    return enviarExito(res, caja, "Caja diaria abierta correctamente", 201);
+  } catch (error) {
     if (error.code === "ER_DUP_ENTRY") {
-      return respondError(
+      return enviarError(
         res,
         409,
         "Ya existe una caja diaria registrada para la fecha actual"
       );
     }
 
+    if (error.statusCode) {
+      return enviarError(res, error.statusCode, error.message);
+    }
+
     console.error("Error al abrir caja diaria:", error);
-    return respondError(res, 500, "Error interno del servidor", {
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
   }
 };
 
@@ -247,7 +142,7 @@ const cerrarCajaDiaria = async (req, res) => {
   const usuarioId = req.user?.id;
 
   if (!usuarioId) {
-    return respondError(
+    return enviarError(
       res,
       401,
       "No se encontró información del usuario en la sesión"
@@ -269,7 +164,7 @@ const cerrarCajaDiaria = async (req, res) => {
   });
 
   if (montoFinalResult.error) {
-    return respondError(res, 400, montoFinalResult.error);
+    return enviarError(res, 400, montoFinalResult.error);
   }
 
   const conteoEfectivoResult = parseDecimalField(conteoEfectivo, {
@@ -278,7 +173,7 @@ const cerrarCajaDiaria = async (req, res) => {
   });
 
   if (conteoEfectivoResult.error) {
-    return respondError(res, 400, conteoEfectivoResult.error);
+    return enviarError(res, 400, conteoEfectivoResult.error);
   }
 
   const conteoTarjetasResult = parseDecimalField(conteoTarjetas, {
@@ -287,156 +182,146 @@ const cerrarCajaDiaria = async (req, res) => {
   });
 
   if (conteoTarjetasResult.error) {
-    return respondError(res, 400, conteoTarjetasResult.error);
+    return enviarError(res, 400, conteoTarjetasResult.error);
   }
 
   const subtotalesResult = sanitizeSubtotales(subtotalesPorMedio);
 
   if (subtotalesResult.error) {
-    return respondError(res, 400, subtotalesResult.error);
+    return enviarError(res, 400, subtotalesResult.error);
   }
 
-  let connection;
-
   try {
-    connection = await promisePool.getConnection();
-    await connection.beginTransaction();
-
-    const [cajaRows] = await connection.execute(
-      `SELECT id_caja, fecha, monto_inicial, monto_final, estado, creado_por
-         FROM CajaDiaria
-        WHERE estado = 'ABIERTA'
-        FOR UPDATE`
-    );
-
-    if (cajaRows.length === 0) {
-      await connection.rollback();
-      return respondError(
-        res,
-        409,
-        "No existe una caja diaria abierta para cerrar"
+    const resultado = await withTransaction(async (connection) => {
+      const [cajaRows] = await connection.execute(
+        `SELECT id_caja, fecha, monto_inicial, monto_final, estado, creado_por
+           FROM CajaDiaria
+          WHERE estado = 'ABIERTA'
+          FOR UPDATE`
       );
-    }
 
-    const cajaActual = cajaRows[0];
-    const idCaja = cajaActual.id_caja;
-    const montoInicialCaja = roundCurrency(cajaActual.monto_inicial || 0);
+      if (cajaRows.length === 0) {
+        const error = new Error(
+          "No existe una caja diaria abierta para cerrar"
+        );
+        error.statusCode = 409;
+        throw error;
+      }
 
-    const [totalesRows] = await connection.execute(
-      `SELECT
-         COALESCE(SUM(CASE WHEN tipo = 'INGRESO' THEN monto ELSE 0 END), 0) AS total_ingresos,
-         COALESCE(SUM(CASE WHEN tipo = 'EGRESO' THEN monto ELSE 0 END), 0) AS total_egresos,
-         COALESCE(SUM(CASE WHEN tipo = 'AJUSTE' THEN monto ELSE 0 END), 0) AS total_ajustes
-       FROM MovimientoCaja
-       WHERE id_caja = ?`,
-      [idCaja]
-    );
+      const cajaActual = cajaRows[0];
+      const idCaja = cajaActual.id_caja;
+      const montoInicialCaja = roundCurrency(cajaActual.monto_inicial || 0);
 
-    const totales = totalesRows[0] || {};
-    const totalIngresos = roundCurrency(totales.total_ingresos || 0);
-    const totalEgresos = roundCurrency(totales.total_egresos || 0);
-    const totalAjustes = roundCurrency(totales.total_ajustes || 0);
+      const [totalesRows] = await connection.execute(
+        `SELECT
+           COALESCE(SUM(CASE WHEN tipo = 'INGRESO' THEN monto ELSE 0 END), 0) AS total_ingresos,
+           COALESCE(SUM(CASE WHEN tipo = 'EGRESO' THEN monto ELSE 0 END), 0) AS total_egresos,
+           COALESCE(SUM(CASE WHEN tipo = 'AJUSTE' THEN monto ELSE 0 END), 0) AS total_ajustes
+         FROM MovimientoCaja
+         WHERE id_caja = ?`,
+        [idCaja]
+      );
 
-    const totalDiaBase = roundCurrency(
-      totalIngresos - totalEgresos + totalAjustes
-    );
-    const montoCalculadoBase = roundCurrency(montoInicialCaja + totalDiaBase);
+      const totales = totalesRows[0] || {};
+      const totalIngresos = roundCurrency(totales.total_ingresos || 0);
+      const totalEgresos = roundCurrency(totales.total_egresos || 0);
+      const totalAjustes = roundCurrency(totales.total_ajustes || 0);
 
-    const montoFinal = montoFinalResult.value ?? 0;
-    const diferenciaOriginal = roundCurrency(montoFinal - montoCalculadoBase);
+      const totalDiaBase = roundCurrency(
+        totalIngresos - totalEgresos + totalAjustes
+      );
+      const montoCalculadoBase = roundCurrency(montoInicialCaja + totalDiaBase);
 
-    let ajusteGenerado = null;
-    let totalAjustesFinal = totalAjustes;
+      const montoFinal = montoFinalResult.value ?? 0;
+      const diferenciaOriginal = roundCurrency(montoFinal - montoCalculadoBase);
 
-    if (diferenciaOriginal !== 0) {
-      const [ajusteResult] = await connection.execute(
-        `INSERT INTO MovimientoCaja (
+      let ajusteGenerado = null;
+      let totalAjustesFinal = totalAjustes;
+
+      if (diferenciaOriginal !== 0) {
+        const [ajusteResult] = await connection.execute(
+          `INSERT INTO MovimientoCaja (
+             id_caja,
+             tipo,
+             monto,
+             concepto,
+             id_usuario
+           )
+           VALUES (?, 'AJUSTE', ?, 'Ajuste automático por diferencia de cierre', ?)`,
+          [idCaja, diferenciaOriginal, usuarioId]
+        );
+
+        ajusteGenerado = {
+          idMovimiento: ajusteResult.insertId,
+          monto: diferenciaOriginal,
+        };
+
+        totalAjustesFinal = roundCurrency(totalAjustes + diferenciaOriginal);
+      }
+
+      const totalDia = roundCurrency(
+        totalIngresos - totalEgresos + totalAjustesFinal
+      );
+      const montoCalculado = roundCurrency(montoInicialCaja + totalDia);
+      const diferenciaFinal = roundCurrency(montoFinal - montoCalculado);
+
+      if (Math.abs(diferenciaFinal) >= 0.01) {
+        throw new Error(
+          "No se pudo balancear la caja automáticamente. Revise los movimientos de ajuste"
+        );
+      }
+
+      const auditoriaObservacion = buildAuditoriaObservacion(observacion, {
+        conteoEfectivo: conteoEfectivoResult.value,
+        conteoTarjetas: conteoTarjetasResult.value,
+        subtotalesPorMedio: subtotalesResult.value,
+      });
+
+      await connection.execute(
+        `INSERT INTO AuditoriaCaja (
            id_caja,
-           tipo,
-           monto,
-           concepto,
-           id_usuario
+           monto_inicial,
+           total_dia,
+           monto_calculado,
+           monto_final,
+           diferencia,
+           id_usuario,
+           observacion
          )
-         VALUES (?, 'AJUSTE', ?, 'Ajuste automático por diferencia de cierre', ?)`,
-        [idCaja, diferenciaOriginal, usuarioId]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          idCaja,
+          montoInicialCaja,
+          totalDia,
+          montoCalculado,
+          montoFinal,
+          diferenciaOriginal,
+          usuarioId,
+          auditoriaObservacion || null,
+        ]
       );
 
-      ajusteGenerado = {
-        idMovimiento: ajusteResult.insertId,
-        monto: diferenciaOriginal,
-      };
-
-      totalAjustesFinal = roundCurrency(totalAjustes + diferenciaOriginal);
-    }
-
-    const totalDia = roundCurrency(
-      totalIngresos - totalEgresos + totalAjustesFinal
-    );
-    const montoCalculado = roundCurrency(montoInicialCaja + totalDia);
-    const diferenciaFinal = roundCurrency(montoFinal - montoCalculado);
-
-    if (Math.abs(diferenciaFinal) >= 0.01) {
-      throw new Error(
-        "No se pudo balancear la caja automáticamente. Revise los movimientos de ajuste"
+      await connection.execute(
+        `UPDATE CajaDiaria
+            SET monto_final = ?,
+                fecha_cierre = NOW(),
+                estado = 'CERRADA',
+                cerrado_por = ?
+          WHERE id_caja = ?`,
+        [montoFinal, usuarioId, idCaja]
       );
-    }
 
-    const auditoriaObservacion = buildAuditoriaObservacion(observacion, {
-      conteoEfectivo: conteoEfectivoResult.value,
-      conteoTarjetas: conteoTarjetasResult.value,
-      subtotalesPorMedio: subtotalesResult.value,
-    });
+      const [cajaActualizadaRows] = await connection.execute(
+        `SELECT id_caja, fecha, fecha_apertura, fecha_cierre,
+                monto_inicial, monto_final, estado, creado_por, cerrado_por
+           FROM CajaDiaria
+          WHERE id_caja = ?`,
+        [idCaja]
+      );
 
-    await connection.execute(
-      `INSERT INTO AuditoriaCaja (
-         id_caja,
-         monto_inicial,
-         total_dia,
-         monto_calculado,
-         monto_final,
-         diferencia,
-         id_usuario,
-         observacion
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        idCaja,
-        montoInicialCaja,
-        totalDia,
-        montoCalculado,
-        montoFinal,
-        diferenciaOriginal,
-        usuarioId,
-        auditoriaObservacion || null,
-      ]
-    );
+      const caja = mapCajaDiariaRow(cajaActualizadaRows[0]);
 
-    await connection.execute(
-      `UPDATE CajaDiaria
-          SET monto_final = ?,
-              fecha_cierre = NOW(),
-              estado = 'CERRADA',
-              cerrado_por = ?
-        WHERE id_caja = ?`,
-      [montoFinal, usuarioId, idCaja]
-    );
-
-    const [cajaActualizadaRows] = await connection.execute(
-      `SELECT id_caja, fecha, fecha_apertura, fecha_cierre,
-              monto_inicial, monto_final, estado, creado_por, cerrado_por
-         FROM CajaDiaria
-        WHERE id_caja = ?`,
-      [idCaja]
-    );
-
-    await connection.commit();
-
-    const caja = mapCajaDiariaRow(cajaActualizadaRows[0]);
-
-    return res.json({
-      success: true,
-      message: "Caja diaria cerrada correctamente",
-      data: {
+      return {
         caja,
         auditoria: {
           montoInicial: montoInicialCaja,
@@ -457,28 +342,19 @@ const cerrarCajaDiaria = async (req, res) => {
           tarjetas: conteoTarjetasResult.value,
           subtotales: subtotalesResult.value,
         },
-      },
+      };
     });
+
+    return enviarExito(res, resultado, "Caja diaria cerrada correctamente");
   } catch (error) {
-    if (connection) {
-      try {
-        await connection.rollback();
-      } catch (rollbackError) {
-        console.error(
-          "Error al revertir la transacción de cierre de caja diaria:",
-          rollbackError
-        );
-      }
+    if (error.statusCode) {
+      return enviarError(res, error.statusCode, error.message);
     }
 
     console.error("Error al cerrar caja diaria:", error);
-    return respondError(res, 500, "Error interno del servidor", {
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
-  } finally {
-    if (connection) {
-      connection.release();
-    }
   }
 };
 
@@ -493,11 +369,7 @@ const obtenerCajaActual = async (req, res) => {
     );
 
     if (cajaRows.length === 0) {
-      return res.json({
-        success: true,
-        message: "No hay caja registrada para el día de hoy",
-        data: null,
-      });
+      return enviarExito(res, null, "No hay caja registrada para el día de hoy");
     }
 
     const caja = mapCajaDiariaRow(cajaRows[0]);
@@ -524,31 +396,23 @@ const obtenerCajaActual = async (req, res) => {
       );
       const montoEsperado = roundCurrency((caja.montoInicial || 0) + totalDia);
 
-      return res.json({
-        success: true,
-        message: "Caja actual obtenida correctamente",
-        data: {
-          ...caja,
-          totales: {
-            ingresos: totalIngresos,
-            egresos: totalEgresos,
-            ajustes: totalAjustes,
-            totalDia,
-            montoEsperado,
-            cantidadMovimientos: totales.cantidad_movimientos || 0,
-          },
+      return enviarExito(res, {
+        ...caja,
+        totales: {
+          ingresos: totalIngresos,
+          egresos: totalEgresos,
+          ajustes: totalAjustes,
+          totalDia,
+          montoEsperado,
+          cantidadMovimientos: totales.cantidad_movimientos || 0,
         },
-      });
+      }, "Caja actual obtenida correctamente");
     }
 
-    return res.json({
-      success: true,
-      message: "Caja actual obtenida correctamente",
-      data: caja,
-    });
+    return enviarExito(res, caja, "Caja actual obtenida correctamente");
   } catch (error) {
     console.error("Error al obtener caja actual:", error);
-    return respondError(res, 500, "Error interno del servidor", {
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -606,10 +470,7 @@ const obtenerHistorialCajas = async (req, res) => {
 
     const cajas = cajaRows.map(mapCajaDiariaRow);
 
-    return res.json({
-      success: true,
-      message: "Historial de cajas obtenido correctamente",
-      data: cajas,
+    return enviarExito(res, cajas, "Historial de cajas obtenido correctamente", 200, {
       pagination: {
         page,
         limit,
@@ -619,7 +480,7 @@ const obtenerHistorialCajas = async (req, res) => {
     });
   } catch (error) {
     console.error("Error al obtener historial de cajas:", error);
-    return respondError(res, 500, "Error interno del servidor", {
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -630,7 +491,7 @@ const obtenerDetalleCaja = async (req, res) => {
     const idCaja = parseInt(req.params.id);
 
     if (!Number.isInteger(idCaja) || idCaja <= 0) {
-      return respondError(res, 400, "El ID de la caja no es válido");
+      return enviarError(res, 400, "El ID de la caja no es válido");
     }
 
     const [cajaRows] = await promisePool.execute(
@@ -642,7 +503,7 @@ const obtenerDetalleCaja = async (req, res) => {
     );
 
     if (cajaRows.length === 0) {
-      return respondError(res, 404, "Caja no encontrada");
+      return enviarError(res, 404, "Caja no encontrada");
     }
 
     const caja = mapCajaDiariaRow(cajaRows[0]);
@@ -665,23 +526,19 @@ const obtenerDetalleCaja = async (req, res) => {
     const totalAjustes = roundCurrency(totales.total_ajustes || 0);
     const totalDia = roundCurrency(totalIngresos - totalEgresos + totalAjustes);
 
-    return res.json({
-      success: true,
-      message: "Detalle de caja obtenido correctamente",
-      data: {
-        ...caja,
-        totales: {
-          ingresos: totalIngresos,
-          egresos: totalEgresos,
-          ajustes: totalAjustes,
-          totalDia,
-          cantidadMovimientos: totales.cantidad_movimientos || 0,
-        },
+    return enviarExito(res, {
+      ...caja,
+      totales: {
+        ingresos: totalIngresos,
+        egresos: totalEgresos,
+        ajustes: totalAjustes,
+        totalDia,
+        cantidadMovimientos: totales.cantidad_movimientos || 0,
       },
-    });
+    }, "Detalle de caja obtenido correctamente");
   } catch (error) {
     console.error("Error al obtener detalle de caja:", error);
-    return respondError(res, 500, "Error interno del servidor", {
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -692,7 +549,7 @@ const obtenerMovimientosCaja = async (req, res) => {
     const idCaja = parseInt(req.params.id);
 
     if (!Number.isInteger(idCaja) || idCaja <= 0) {
-      return respondError(res, 400, "El ID de la caja no es válido");
+      return enviarError(res, 400, "El ID de la caja no es válido");
     }
 
     // Verificar que la caja existe
@@ -702,7 +559,7 @@ const obtenerMovimientosCaja = async (req, res) => {
     );
 
     if (cajaRows.length === 0) {
-      return respondError(res, 404, "Caja no encontrada");
+      return enviarError(res, 404, "Caja no encontrada");
     }
 
     const tipoFiltro = req.query.tipo?.toUpperCase();
@@ -755,14 +612,10 @@ const obtenerMovimientosCaja = async (req, res) => {
       fecha: row.fecha,
     }));
 
-    return res.json({
-      success: true,
-      message: "Movimientos de caja obtenidos correctamente",
-      data: movimientos,
-    });
+    return enviarExito(res, movimientos, "Movimientos de caja obtenidos correctamente");
   } catch (error) {
     console.error("Error al obtener movimientos de caja:", error);
-    return respondError(res, 500, "Error interno del servidor", {
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -773,7 +626,7 @@ const obtenerAuditoriaCaja = async (req, res) => {
     const idCaja = parseInt(req.params.id);
 
     if (!Number.isInteger(idCaja) || idCaja <= 0) {
-      return respondError(res, 400, "El ID de la caja no es válido");
+      return enviarError(res, 400, "El ID de la caja no es válido");
     }
 
     // Verificar que la caja existe y está cerrada
@@ -783,11 +636,11 @@ const obtenerAuditoriaCaja = async (req, res) => {
     );
 
     if (cajaRows.length === 0) {
-      return respondError(res, 404, "Caja no encontrada");
+      return enviarError(res, 404, "Caja no encontrada");
     }
 
     if (cajaRows[0].estado !== "CERRADA") {
-      return respondError(
+      return enviarError(
         res,
         409,
         "La caja aún no ha sido cerrada. No hay auditoría disponible"
@@ -814,7 +667,7 @@ const obtenerAuditoriaCaja = async (req, res) => {
     );
 
     if (auditoriaRows.length === 0) {
-      return respondError(
+      return enviarError(
         res,
         404,
         "No se encontró registro de auditoría para esta caja"
@@ -823,25 +676,21 @@ const obtenerAuditoriaCaja = async (req, res) => {
 
     const auditoria = auditoriaRows[0];
 
-    return res.json({
-      success: true,
-      message: "Auditoría de caja obtenida correctamente",
-      data: {
-        id: auditoria.id_auditoria,
-        idCaja: auditoria.id_caja,
-        fecha: auditoria.fecha,
-        montoInicial: roundCurrency(auditoria.monto_inicial || 0),
-        totalDia: roundCurrency(auditoria.total_dia || 0),
-        montoCalculado: roundCurrency(auditoria.monto_calculado || 0),
-        montoFinal: roundCurrency(auditoria.monto_final || 0),
-        diferencia: roundCurrency(auditoria.diferencia || 0),
-        idUsuario: auditoria.id_usuario,
-        observacion: auditoria.observacion,
-      },
-    });
+    return enviarExito(res, {
+      id: auditoria.id_auditoria,
+      idCaja: auditoria.id_caja,
+      fecha: auditoria.fecha,
+      montoInicial: roundCurrency(auditoria.monto_inicial || 0),
+      totalDia: roundCurrency(auditoria.total_dia || 0),
+      montoCalculado: roundCurrency(auditoria.monto_calculado || 0),
+      montoFinal: roundCurrency(auditoria.monto_final || 0),
+      diferencia: roundCurrency(auditoria.diferencia || 0),
+      idUsuario: auditoria.id_usuario,
+      observacion: auditoria.observacion,
+    }, "Auditoría de caja obtenida correctamente");
   } catch (error) {
     console.error("Error al obtener auditoría de caja:", error);
-    return respondError(res, 500, "Error interno del servidor", {
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }

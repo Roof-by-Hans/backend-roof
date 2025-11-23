@@ -10,6 +10,7 @@ const {
   obtenerRolesUsuario,
 } = require("../helpers/rolHelper");
 const { deleteFile, getFileUrl } = require("../config/multer");
+const { enviarError, enviarExito } = require("../helpers/responseHelpers");
 
 const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
 
@@ -51,16 +52,10 @@ const getUsuarios = async (req, res) => {
       return usuario;
     });
 
-    res.json({
-      success: true,
-      data: usuariosConImagenes,
-      message: "Usuarios obtenidos correctamente",
-    });
+    return enviarExito(res, usuariosConImagenes, "Usuarios obtenidos correctamente");
   } catch (error) {
     console.error("Error al obtener usuarios:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -84,10 +79,7 @@ const getUsuarioPorId = async (req, res) => {
     );
 
     if (rows.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Usuario no encontrado",
-      });
+      return enviarError(res, 404, "Usuario no encontrado");
     }
 
     const usuarioMapeado = mapUsuarioRow(rows[0]);
@@ -99,16 +91,10 @@ const getUsuarioPorId = async (req, res) => {
       );
     }
 
-    res.json({
-      success: true,
-      data: usuarioMapeado,
-      message: "Usuario obtenido correctamente",
-    });
+    return enviarExito(res, usuarioMapeado, "Usuario obtenido correctamente");
   } catch (error) {
     console.error("Error al obtener usuario:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -120,10 +106,7 @@ const crearUsuario = async (req, res) => {
     const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
 
     if (!nombreUsuario || !contrasena) {
-      return res.status(400).json({
-        success: false,
-        message: "Los campos nombreUsuario y contrasena son obligatorios",
-      });
+      return enviarError(res, 400, "Los campos nombreUsuario y contrasena son obligatorios");
     }
 
     const activoNormalizado = normalizeActivo(activo);
@@ -174,24 +157,15 @@ const crearUsuario = async (req, res) => {
       );
     }
 
-    res.status(201).json({
-      success: true,
-      data: nuevoUsuario,
-      message: "Usuario creado correctamente",
-    });
+    return enviarExito(res, nuevoUsuario, "Usuario creado correctamente", 201);
   } catch (error) {
     console.error("Error al crear usuario:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({
-        success: false,
-        message: "El nombre de usuario ya está registrado",
-      });
+      return enviarError(res, 409, "El nombre de usuario ya está registrado");
     }
 
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -209,10 +183,7 @@ const actualizarUsuario = async (req, res) => {
     );
 
     if (usuarioExistente.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Usuario no encontrado",
-      });
+      return enviarError(res, 404, "Usuario no encontrado");
     }
 
     const campos = [];
@@ -291,10 +262,7 @@ const actualizarUsuario = async (req, res) => {
     }
 
     if (campos.length === 0 && roles === undefined) {
-      return res.status(400).json({
-        success: false,
-        message: "Debe enviar al menos un campo para actualizar",
-      });
+      return enviarError(res, 400, "Debe enviar al menos un campo para actualizar");
     }
 
     if (campos.length > 0) {
@@ -306,10 +274,7 @@ const actualizarUsuario = async (req, res) => {
       );
 
       if (result.affectedRows === 0) {
-        return res.status(404).json({
-          success: false,
-          message: "Usuario no encontrado",
-        });
+        return enviarError(res, 404, "Usuario no encontrado");
       }
     }
 
@@ -336,24 +301,15 @@ const actualizarUsuario = async (req, res) => {
       );
     }
 
-    res.json({
-      success: true,
-      data: usuarioActualizado,
-      message: "Usuario actualizado correctamente",
-    });
+    return enviarExito(res, usuarioActualizado, "Usuario actualizado correctamente");
   } catch (error) {
     console.error("Error al actualizar usuario:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
-      return res.status(409).json({
-        success: false,
-        message: "El nombre de usuario ya está registrado",
-      });
+      return enviarError(res, 409, "El nombre de usuario ya está registrado");
     }
 
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -370,10 +326,7 @@ const eliminarUsuario = async (req, res) => {
     );
 
     if (usuarioAEliminar.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Usuario no encontrado",
-      });
+      return enviarError(res, 404, "Usuario no encontrado");
     }
 
     // Eliminar primero los roles del usuario (foreign key constraint)
@@ -388,10 +341,7 @@ const eliminarUsuario = async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Usuario no encontrado",
-      });
+      return enviarError(res, 404, "Usuario no encontrado");
     }
 
     // Eliminar la imagen asociada si existe
@@ -406,15 +356,10 @@ const eliminarUsuario = async (req, res) => {
       await deleteFile(rutaImagen);
     }
 
-    res.json({
-      success: true,
-      message: "Usuario eliminado correctamente",
-    });
+    return enviarExito(res, null, "Usuario eliminado correctamente");
   } catch (error) {
     console.error("Error al eliminar usuario:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -432,11 +377,11 @@ const asignarRolUsuario = async (req, res) => {
       : [];
 
     if (!Array.isArray(rolesSolicitados) || rolesSolicitados.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Debe proporcionar al menos un rol a asignar (roles[], idRol o nombreRol)",
-      });
+      return enviarError(
+        res,
+        400,
+        "Debe proporcionar al menos un rol a asignar (roles[], idRol o nombreRol)"
+      );
     }
 
     const [usuarios] = await promisePool.execute(
@@ -447,10 +392,7 @@ const asignarRolUsuario = async (req, res) => {
     );
 
     if (usuarios.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Usuario no encontrado",
-      });
+      return enviarError(res, 404, "Usuario no encontrado");
     }
 
     const normalizados = [];
@@ -477,16 +419,15 @@ const asignarRolUsuario = async (req, res) => {
     });
 
     if (normalizados.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Los roles enviados no contienen información válida",
-      });
+      return enviarError(
+        res,
+        400,
+        "Los roles enviados no contienen información válida"
+      );
     }
 
     if (entradasInvalidas.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Algunas entradas de rol son inválidas",
+      return enviarError(res, 400, "Algunas entradas de rol son inválidas", {
         detalles: entradasInvalidas,
       });
     }
@@ -516,17 +457,16 @@ const asignarRolUsuario = async (req, res) => {
     }
 
     if (rolesEncontrados.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Ninguno de los roles proporcionados fue encontrado",
-        detalles: rolesNoEncontrados,
-      });
+      return enviarError(
+        res,
+        404,
+        "Ninguno de los roles proporcionados fue encontrado",
+        { detalles: rolesNoEncontrados }
+      );
     }
 
     if (rolesNoEncontrados.length > 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Algunos roles no fueron encontrados",
+      return enviarError(res, 404, "Algunos roles no fueron encontrados", {
         detalles: rolesNoEncontrados,
       });
     }
@@ -541,14 +481,17 @@ const asignarRolUsuario = async (req, res) => {
     }
 
     if (rolesYaAsignados.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Uno o más roles ya se encuentran asignados al usuario",
-        detalles: rolesYaAsignados.map((rol) => ({
-          idRol: rol.id_rol,
-          nombreRol: rol.nombre,
-        })),
-      });
+      return enviarError(
+        res,
+        409,
+        "Uno o más roles ya se encuentran asignados al usuario",
+        {
+          detalles: rolesYaAsignados.map((rol) => ({
+            idRol: rol.id_rol,
+            nombreRol: rol.nombre,
+          })),
+        }
+      );
     }
 
     for (const rol of rolesEncontrados) {
@@ -565,22 +508,20 @@ const asignarRolUsuario = async (req, res) => {
       roles: rolesActualizados.map((r) => r.nombre),
     });
 
-    res.status(201).json({
-      success: true,
-      message:
-        rolesEncontrados.length > 1
-          ? "Roles asignados correctamente"
-          : "Rol asignado correctamente",
-      data: {
+    return enviarExito(
+      res,
+      {
         usuario: usuarioMapeado,
         rolesAsignados: rolesEncontrados.map((rol) => rol.nombre),
       },
-    });
+      rolesEncontrados.length > 1
+        ? "Roles asignados correctamente"
+        : "Rol asignado correctamente",
+      201
+    );
   } catch (error) {
     console.error("Error al asignar rol:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }
@@ -598,11 +539,11 @@ const removerRolesUsuario = async (req, res) => {
       : [];
 
     if (!Array.isArray(rolesSolicitados) || rolesSolicitados.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Debe proporcionar al menos un rol a remover (roles[], idRol o nombreRol)",
-      });
+      return enviarError(
+        res,
+        400,
+        "Debe proporcionar al menos un rol a remover (roles[], idRol o nombreRol)"
+      );
     }
 
     const [usuarios] = await promisePool.execute(
@@ -613,10 +554,7 @@ const removerRolesUsuario = async (req, res) => {
     );
 
     if (usuarios.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Usuario no encontrado",
-      });
+      return enviarError(res, 404, "Usuario no encontrado");
     }
 
     const normalizados = [];
@@ -643,17 +581,16 @@ const removerRolesUsuario = async (req, res) => {
     });
 
     if (normalizados.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Los roles enviados no contienen información válida",
-        detalles: entradasInvalidas,
-      });
+      return enviarError(
+        res,
+        400,
+        "Los roles enviados no contienen información válida",
+        { detalles: entradasInvalidas }
+      );
     }
 
     if (entradasInvalidas.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Algunas entradas de rol son inválidas",
+      return enviarError(res, 400, "Algunas entradas de rol son inválidas", {
         detalles: entradasInvalidas,
       });
     }
@@ -683,17 +620,16 @@ const removerRolesUsuario = async (req, res) => {
     }
 
     if (rolesEncontrados.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Ninguno de los roles proporcionados fue encontrado",
-        detalles: rolesNoEncontrados,
-      });
+      return enviarError(
+        res,
+        404,
+        "Ninguno de los roles proporcionados fue encontrado",
+        { detalles: rolesNoEncontrados }
+      );
     }
 
     if (rolesNoEncontrados.length > 0) {
-      return res.status(404).json({
-        success: false,
-        message: "Algunos roles no fueron encontrados",
+      return enviarError(res, 404, "Algunos roles no fueron encontrados", {
         detalles: rolesNoEncontrados,
       });
     }
@@ -708,14 +644,17 @@ const removerRolesUsuario = async (req, res) => {
     }
 
     if (rolesNoAsignados.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Uno o más roles no están asignados al usuario",
-        detalles: rolesNoAsignados.map((rol) => ({
-          idRol: rol.id_rol,
-          nombreRol: rol.nombre,
-        })),
-      });
+      return enviarError(
+        res,
+        409,
+        "Uno o más roles no están asignados al usuario",
+        {
+          detalles: rolesNoAsignados.map((rol) => ({
+            idRol: rol.id_rol,
+            nombreRol: rol.nombre,
+          })),
+        }
+      );
     }
 
     for (const rol of rolesEncontrados) {
@@ -728,22 +667,19 @@ const removerRolesUsuario = async (req, res) => {
       roles: rolesActualizados.map((r) => r.nombre),
     });
 
-    res.json({
-      success: true,
-      message:
-        rolesEncontrados.length > 1
-          ? "Roles removidos correctamente"
-          : "Rol removido correctamente",
-      data: {
+    return enviarExito(
+      res,
+      {
         usuario: usuarioMapeado,
         rolesRemovidos: rolesEncontrados.map((rol) => rol.nombre),
       },
-    });
+      rolesEncontrados.length > 1
+        ? "Roles removidos correctamente"
+        : "Rol removido correctamente"
+    );
   } catch (error) {
     console.error("Error al remover rol:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
+    return enviarError(res, 500, "Error interno del servidor", {
       error: error.message,
     });
   }

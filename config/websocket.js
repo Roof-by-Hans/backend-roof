@@ -53,42 +53,50 @@ const initializeWebSocket = (server) => {
     // Configuraciones adicionales para mejor rendimiento
     pingTimeout: 60000,
     pingInterval: 25000,
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    // Compresión de mensajes WebSocket
+    perMessageDeflate: {
+      threshold: 1024 // Comprimir mensajes mayores a 1KB
+    },
+    maxHttpBufferSize: 1e6, // 1MB
+    allowEIO3: true
   });
 
-  // Aplicar middleware de autenticación
   io.use(socketAuthMiddleware);
 
-  // Manejo de conexiones
   io.on('connection', (socket) => {
-    const userInfo = socket.isAuthenticated 
-      ? `Usuario: ${socket.userName} (ID: ${socket.userId}, Rol: ${socket.userRole})`
-      : 'Invitado (sin autenticar)';
-    
-    console.log(`✅ Cliente conectado: ${socket.id} - ${userInfo}`);
+    console.log(`✅ WebSocket: Cliente conectado (ID: ${socket.id})`);
 
-    // Registrar handlers de diferentes módulos de forma escalable
-    // Cada handler se encarga de sus propios eventos
+    // Registrar handlers (solo una vez cada uno)
     require('../websocket/handlers/mesasHandler')(io, socket);
     require('../websocket/handlers/pedidosHandler')(io, socket);
-    
-    // Aquí puedes agregar más handlers para otros módulos:
-    // require('../websocket/handlers/productosHandler')(io, socket);
-    // require('../websocket/handlers/clientesHandler')(io, socket);
-    // require('../websocket/handlers/notificacionesHandler')(io, socket);
 
-    // Manejo de desconexión
-    socket.on('disconnect', (reason) => {
-      console.log(`❌ Cliente desconectado: ${socket.id} - Razón: ${reason}`);
+    // Manejo de errores de conexión
+    socket.on("error", (error) => {
+      console.error(`❌ WebSocket error (ID: ${socket.id}):`, error.message);
     });
 
-    // Manejo de errores
-    socket.on('error', (error) => {
-      console.error(`⚠️ Error en socket ${socket.id}:`, error);
+    // Manejo de desconexión
+    socket.on("disconnect", (reason) => {
+      console.log(`🔌 WebSocket: Cliente desconectado (ID: ${socket.id}, Razón: ${reason})`);
+    });
+
+    // Validar estructura de mensajes personalizados
+    socket.on("message", (data) => {
+      try {
+        if (!data || typeof data !== 'object') {
+          console.warn(`⚠️ WebSocket: Mensaje inválido recibido de ${socket.id}`);
+          return;
+        }
+        // Procesar mensaje válido aquí si es necesario
+        console.log(`📨 WebSocket: Mensaje recibido de ${socket.id}:`, data);
+      } catch (error) {
+        console.error(`❌ WebSocket: Error procesando mensaje de ${socket.id}:`, error.message);
+      }
     });
   });
 
-  console.log('🔌 WebSocket inicializado correctamente');
+  console.log('✅ WebSocket inicializado correctamente');
   return io;
 };
 

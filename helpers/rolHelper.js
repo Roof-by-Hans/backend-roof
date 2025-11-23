@@ -1,18 +1,5 @@
 const { promisePool } = require("../config/database");
 
-const obtenerRolesUsuario = async (idUsuario) => {
-  const [rows] = await promisePool.execute(
-    `SELECT r.id_rol, r.nombre
-     FROM Rol r
-     INNER JOIN UsuarioRol ur ON ur.id_rol = r.id_rol
-     WHERE ur.id_usuario = ?
-     ORDER BY r.nombre`,
-    [idUsuario]
-  );
-
-  return rows;
-};
-
 const obtenerRolPorId = async (idRol) => {
   const [rows] = await promisePool.execute(
     `SELECT id_rol, nombre
@@ -56,7 +43,6 @@ const eliminarRolAsignado = async (idUsuario, idRol) => {
 };
 
 module.exports = {
-  obtenerRolesUsuario,
   obtenerRolPorId,
   obtenerRolPorNombre,
   existeRolAsignado,

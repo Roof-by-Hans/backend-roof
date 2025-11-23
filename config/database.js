@@ -1,5 +1,4 @@
 const mysql = require("mysql2");
-require("dotenv").config();
 
 // Configuración del pool de conexiones
 const poolConfig = {
@@ -12,6 +11,10 @@ const poolConfig = {
   connectionLimit: 10,
   queueLimit: 0,
   charset: "utf8mb4",
+  // Optimizaciones de rendimiento
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 10000,
+  connectTimeout: 10000,
 };
 
 const pool = mysql.createPool(poolConfig);
@@ -29,23 +32,8 @@ const testConnection = async () => {
   }
 };
 
-const closePool = () => {
-  return new Promise((resolve, reject) => {
-    pool.end((err) => {
-      if (err) {
-        console.error("Error al cerrar el pool de conexiones:", err);
-        reject(err);
-      } else {
-        console.log("Pool de conexiones cerrado");
-        resolve();
-      }
-    });
-  });
-};
-
 module.exports = {
   pool,
   promisePool,
   testConnection,
-  closePool,
 };
