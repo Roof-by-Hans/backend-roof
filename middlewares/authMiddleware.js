@@ -1,6 +1,5 @@
 const { promisePool } = require("../config/database");
 const { verifyToken } = require("../helpers/jwt");
-const { obtenerRolesUsuario } = require("../helpers/rolHelper");
 
 const authenticate = async (req, res, next) => {
   try {
@@ -44,10 +43,15 @@ const authenticate = async (req, res, next) => {
       });
     }
 
+    // Obtener usuario Y sus roles en una sola query (optimización N+1)
     const [rows] = await promisePool.execute(
-      `SELECT id_usuario, nombre_usuario, activo
-       FROM Usuario
-       WHERE id_usuario = ?`,
+      `SELECT u.id_usuario, u.nombre_usuario, u.activo,
+              GROUP_CONCAT(r.nombre) AS roles
+       FROM Usuario u
+       LEFT JOIN UsuarioRol ur ON u.id_usuario = ur.id_usuario
+       LEFT JOIN Rol r ON ur.id_rol = r.id_rol
+       WHERE u.id_usuario = ?
+       GROUP BY u.id_usuario, u.nombre_usuario, u.activo`,
       [decoded.id]
     );
 
@@ -67,8 +71,8 @@ const authenticate = async (req, res, next) => {
       });
     }
 
-    const roles = await obtenerRolesUsuario(usuario.id_usuario);
-    const roleNames = roles.map((rol) => rol.nombre);
+    // Convertir roles de string concatenado a array
+    const roleNames = usuario.roles ? usuario.roles.split(',') : [];
 
     req.user = {
       id: usuario.id_usuario,

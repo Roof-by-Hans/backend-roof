@@ -65,20 +65,38 @@ const initializeWebSocket = (server) => {
   io.use(socketAuthMiddleware);
 
   io.on('connection', (socket) => {
+    console.log(`✅ WebSocket: Cliente conectado (ID: ${socket.id})`);
+
     // Registrar handlers (solo una vez cada uno)
     require('../websocket/handlers/mesasHandler')(io, socket);
     require('../websocket/handlers/pedidosHandler')(io, socket);
 
-    socket.on('disconnect', (reason) => {
-      // Cliente desconectado silenciosamente
+    // Manejo de errores de conexión
+    socket.on("error", (error) => {
+      console.error(`❌ WebSocket error (ID: ${socket.id}):`, error.message);
     });
 
-    socket.on('error', (error) => {
-      console.error(`⚠️ Error en socket ${socket.id}:`, error);
+    // Manejo de desconexión
+    socket.on("disconnect", (reason) => {
+      console.log(`🔌 WebSocket: Cliente desconectado (ID: ${socket.id}, Razón: ${reason})`);
+    });
+
+    // Validar estructura de mensajes personalizados
+    socket.on("message", (data) => {
+      try {
+        if (!data || typeof data !== 'object') {
+          console.warn(`⚠️ WebSocket: Mensaje inválido recibido de ${socket.id}`);
+          return;
+        }
+        // Procesar mensaje válido aquí si es necesario
+        console.log(`📨 WebSocket: Mensaje recibido de ${socket.id}:`, data);
+      } catch (error) {
+        console.error(`❌ WebSocket: Error procesando mensaje de ${socket.id}:`, error.message);
+      }
     });
   });
 
-  console.log('🔌 WebSocket inicializado correctamente');
+  console.log('✅ WebSocket inicializado correctamente');
   return io;
 };
 

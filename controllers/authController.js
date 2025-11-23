@@ -1,87 +1,60 @@
 const bcrypt = require("bcrypt");
 const { promisePool } = require("../config/database");
 const { generateToken } = require("../helpers/jwt");
-const { mapUsuarioRow } = require("../helpers/usuarioMapper");
-const { obtenerRolesUsuario } = require("../helpers/rolHelper");
+const asyncHandler = require("../helpers/asyncHandler");
+const { enviarError, enviarExito } = require("../helpers/responseHelpers");
 
-const login = async (req, res) => {
-  try {
-    const { nombreUsuario, contrasena } = req.body;
+const login = asyncHandler(async (req, res) => {
+  const { nombreUsuario, contrasena } = req.body;
 
-    if (!nombreUsuario || !contrasena) {
-      return res.status(400).json({
-        success: false,
-        message: "Los campos nombreUsuario y contrasena son obligatorios",
-      });
-    }
+  if (!nombreUsuario || !contrasena) {
+    return enviarError(res, 400, "Nombre de usuario y contraseña son requeridos");
+  }
 
-    const [rows] = await promisePool.execute(
-      `SELECT id_usuario, nombre_usuario, contrasena, activo
-       FROM Usuario
-       WHERE nombre_usuario = ?`,
-      [nombreUsuario]
-    );
+  const [rows] = await promisePool.execute(
+    `SELECT u.id_usuario, u.nombre_usuario, u.contrasena, u.activo,
+            GROUP_CONCAT(r.nombre) AS roles
+     FROM Usuario u
+     LEFT JOIN UsuarioRol ur ON u.id_usuario = ur.id_usuario
+     LEFT JOIN Rol r ON ur.id_rol = r.id_rol
+     WHERE u.nombre_usuario = ?
+     GROUP BY u.id_usuario, u.nombre_usuario, u.contrasena, u.activo`,
+    [nombreUsuario]
+  );
 
-    if (rows.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: "Credenciales inválidas",
-      });
-    }
+  if (rows.length === 0) {
+    return enviarError(res, 401, "Credenciales inválidas");
+  }
 
-    const usuario = rows[0];
+  const usuario = rows[0];
 
-    if (!usuario.activo) {
-      return res.status(403).json({
-        success: false,
-        message: "El usuario se encuentra inactivo",
-      });
-    }
+  if (!usuario.activo) {
+    return enviarError(res, 401, "Usuario inactivo");
+  }
 
-    const contrasenaValida = await bcrypt.compare(
-      contrasena,
-      usuario.contrasena
-    );
+  const passwordMatch = await bcrypt.compare(contrasena, usuario.contrasena);
 
-    if (!contrasenaValida) {
-      return res.status(401).json({
-        success: false,
-        message: "Credenciales inválidas",
-      });
-    }
+  if (!passwordMatch) {
+    return enviarError(res, 401, "Credenciales inválidas");
+  }
 
-    const roles = await obtenerRolesUsuario(usuario.id_usuario);
-    const roleNames = roles.map((rol) => rol.nombre);
+  const roleNames = usuario.roles ? usuario.roles.split(',') : [];
 
-    const payload = {
+  const token = generateToken({
+    id: usuario.id_usuario,
+    nombreUsuario: usuario.nombre_usuario,
+    roles: roleNames,
+  });
+
+  return enviarExito(res, {
+    token,
+    usuario: {
       id: usuario.id_usuario,
       nombreUsuario: usuario.nombre_usuario,
       roles: roleNames,
-    };
-
-    const token = generateToken(payload);
-    const usuarioMapeado = {
-      ...mapUsuarioRow(usuario),
-      roles: roleNames,
-    };
-
-    res.json({
-      success: true,
-      message: "Inicio de sesión exitoso",
-      data: {
-        token,
-        usuario: usuarioMapeado,
-      },
-    });
-  } catch (error) {
-    console.error("Error en login:", error);
-    res.status(500).json({
-      success: false,
-      message: "Error interno del servidor",
-      error: error.message,
-    });
-  }
-};
+    },
+  }, "Inicio de sesión exitoso");
+});
 
 module.exports = {
   login,

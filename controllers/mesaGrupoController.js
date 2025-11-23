@@ -3,7 +3,7 @@ const {
   normalizeNombre,
   buildGrupoDetalle,
   mapMesaConGrupoRows,
-} = require("../models/mesaGrupoModel");
+} = require("../helpers/mesaGrupoMapper");
 const {
   emitGrupoCreado,
   emitGrupoDisuelto,
@@ -33,7 +33,7 @@ const emitirListaCompletaMesas = async () => {
     const mesas = mapMesaConGrupoRows(rows);
     emitMesasConGrupos(mesas);
   } catch (error) {
-    console.error('Error al emitir lista completa de mesas:', error);
+    console.error("Error al emitir lista completa de mesas:", error);
   }
 };
 
@@ -217,9 +217,9 @@ const crearGrupo = async (req, res) => {
       emitMesasUnidas({
         idGrupo: grupo.id,
         nombreGrupo: grupo.nombre,
-        mesasUnidas: mesaIds
+        mesasUnidas: mesaIds,
       });
-      
+
       // Emitir lista completa actualizada de mesas con grupos
       await emitirListaCompletaMesas();
 
@@ -292,7 +292,7 @@ const disolverGrupo = async (req, res) => {
       [id]
     );
 
-    const mesasLiberadas = mesasDelGrupo.map(m => m.id_mesa);
+    const mesasLiberadas = mesasDelGrupo.map((m) => m.id_mesa);
 
     const [result] = await promisePool.execute(
       `DELETE FROM GrupoMesas
@@ -308,9 +308,9 @@ const disolverGrupo = async (req, res) => {
     emitGrupoDisuelto(id, mesasLiberadas);
     emitMesasSeparadas({
       idGrupo: id,
-      mesasSeparadas: mesasLiberadas
+      mesasSeparadas: mesasLiberadas,
     });
-    
+
     // Emitir lista completa actualizada de mesas con grupos
     await emitirListaCompletaMesas();
 
@@ -333,7 +333,7 @@ const disolverGrupo = async (req, res) => {
  */
 const modificarMesasGrupo = async (req, res) => {
   const connection = await promisePool.getConnection();
-  
+
   try {
     const idGrupo = sanitizeId(req.params.id);
     const { agregar = [], remover = [] } = req.body || {};
@@ -394,10 +394,14 @@ const modificarMesasGrupo = async (req, res) => {
 
       if (mesasEnGrupo.length > 0) {
         await connection.rollback();
-        
-        const mesasYaEnGrupo = mesasEnGrupo.filter(m => m.id_grupo === idGrupo);
-        const mesasEnOtroGrupo = mesasEnGrupo.filter(m => m.id_grupo !== idGrupo);
-        
+
+        const mesasYaEnGrupo = mesasEnGrupo.filter(
+          (m) => m.id_grupo === idGrupo
+        );
+        const mesasEnOtroGrupo = mesasEnGrupo.filter(
+          (m) => m.id_grupo !== idGrupo
+        );
+
         if (mesasEnOtroGrupo.length > 0) {
           return respondError(
             res,
@@ -406,13 +410,13 @@ const modificarMesasGrupo = async (req, res) => {
             { mesasOcupadas: mesasEnOtroGrupo }
           );
         }
-        
+
         if (mesasYaEnGrupo.length > 0) {
           return respondError(
             res,
             409,
             "Una o más mesas ya pertenecen a este grupo",
-            { mesasYaEnGrupo: mesasYaEnGrupo.map(m => m.id_mesa) }
+            { mesasYaEnGrupo: mesasYaEnGrupo.map((m) => m.id_mesa) }
           );
         }
       }
@@ -432,7 +436,7 @@ const modificarMesasGrupo = async (req, res) => {
     // REMOVER MESAS DEL GRUPO
     if (remover.length > 0) {
       const placeholders = remover.map(() => "?").join(", ");
-      
+
       // Verificar que las mesas están en este grupo
       const [mesasEnEsteGrupo] = await connection.execute(
         `SELECT id_mesa FROM MesaGrupo 
@@ -456,7 +460,7 @@ const modificarMesasGrupo = async (req, res) => {
       );
 
       const totalMesasEnGrupo = countMesas[0].total;
-      
+
       if (totalMesasEnGrupo - remover.length === 0) {
         await connection.rollback();
         return respondError(
@@ -570,9 +574,11 @@ const getFacturaActivaGrupo = async (req, res) => {
     }
 
     // Obtener los detalles de la factura
-    const { mapDetalleFacturaRows } = require("../helpers/detalleFacturaMapper");
+    const {
+      mapDetalleFacturaRows,
+    } = require("../helpers/detalleFacturaMapper");
     const { mapFacturaConDetalles } = require("../helpers/facturaMapper");
-    
+
     const [detallesRows] = await promisePool.execute(
       `SELECT df.id_detalle,
               df.id_factura,

@@ -33,9 +33,6 @@ const mapProductoRow = (row = {}) => {
   };
 };
 
-const mapProductosRows = (rows = []) => rows.map(mapProductoRow);
-
 module.exports = {
   mapProductoRow,
-  mapProductosRows,
 };

@@ -15,8 +15,6 @@ const poolConfig = {
   enableKeepAlive: true,
   keepAliveInitialDelay: 10000,
   connectTimeout: 10000,
-  maxIdle: 10,
-  idleTimeout: 60000,
 };
 
 const pool = mysql.createPool(poolConfig);
@@ -34,23 +32,8 @@ const testConnection = async () => {
   }
 };
 
-const closePool = () => {
-  return new Promise((resolve, reject) => {
-    pool.end((err) => {
-      if (err) {
-        console.error("Error al cerrar el pool de conexiones:", err);
-        reject(err);
-      } else {
-        console.log("Pool de conexiones cerrado");
-        resolve();
-      }
-    });
-  });
-};
-
 module.exports = {
   pool,
   promisePool,
   testConnection,
-  closePool,
 };

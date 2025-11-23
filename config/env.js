@@ -1,11 +1,5 @@
 require('dotenv').config();
 
-/**
- * Configuración centralizada de variables de entorno
- * Valida variables requeridas al inicio de la aplicación
- */
-
-// Variables requeridas para el funcionamiento del backend
 const requiredEnvVars = [
   'DB_HOST',
   'DB_PORT',

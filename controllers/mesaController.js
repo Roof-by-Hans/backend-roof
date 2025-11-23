@@ -2,7 +2,7 @@ const { promisePool } = require("../config/database");
 const {
   normalizeNombre,
   mapMesaConGrupoRows,
-} = require("../models/mesaGrupoModel");
+} = require("../helpers/mesaGrupoMapper");
 const {
   emitMesaCreada,
   emitMesaActualizada,
@@ -266,26 +266,31 @@ const cambiarEstadoMesa = async (req, res) => {
     const { estado, idCliente } = req.body || {};
 
     // Validar estado
-    const estadosValidos = ['DISPONIBLE', 'OCUPADA', 'RESERVADA', 'FUERA_DE_SERVICIO'];
-    
+    const estadosValidos = [
+      "DISPONIBLE",
+      "OCUPADA",
+      "RESERVADA",
+      "FUERA_DE_SERVICIO",
+    ];
+
     if (!estado || !estadosValidos.includes(estado)) {
       return respondError(
-        res, 
-        400, 
-        `El estado debe ser uno de: ${estadosValidos.join(', ')}`
+        res,
+        400,
+        `El estado debe ser uno de: ${estadosValidos.join(", ")}`
       );
     }
 
     // Validar que la mesa exista
     const mesaExistente = await obtenerMesaConGrupo(idMesa);
-    
+
     if (!mesaExistente) {
       return respondError(res, 404, "Mesa no encontrada");
     }
 
     // Si el estado es OCUPADA, debe tener un cliente
     // Si el estado es DISPONIBLE, limpiar el cliente
-    const idClienteActual = estado === 'OCUPADA' ? (idCliente || null) : null;
+    const idClienteActual = estado === "OCUPADA" ? idCliente || null : null;
 
     const [result] = await promisePool.execute(
       `UPDATE Mesa
@@ -296,7 +301,11 @@ const cambiarEstadoMesa = async (req, res) => {
     );
 
     if (result.affectedRows === 0) {
-      return respondError(res, 404, "No se pudo actualizar el estado de la mesa");
+      return respondError(
+        res,
+        404,
+        "No se pudo actualizar el estado de la mesa"
+      );
     }
 
     const mesa = await obtenerMesaConGrupo(idMesa);
@@ -331,16 +340,16 @@ const ocuparMesa = async (req, res) => {
     const { idCliente } = req.body || {};
 
     const mesaExistente = await obtenerMesaConGrupo(idMesa);
-    
+
     if (!mesaExistente) {
       return respondError(res, 404, "Mesa no encontrada");
     }
 
-    if (mesaExistente.estado === 'OCUPADA') {
+    if (mesaExistente.estado === "OCUPADA") {
       return respondError(res, 409, "La mesa ya está ocupada");
     }
 
-    if (mesaExistente.estado === 'FUERA_DE_SERVICIO') {
+    if (mesaExistente.estado === "FUERA_DE_SERVICIO") {
       return respondError(res, 409, "La mesa está fuera de servicio");
     }
 
@@ -359,7 +368,7 @@ const ocuparMesa = async (req, res) => {
     const mesa = await obtenerMesaConGrupo(idMesa);
 
     emitMesaEstadoCambiado(idMesa, {
-      estado: 'OCUPADA',
+      estado: "OCUPADA",
       idClienteActual: mesa.idClienteActual,
     });
 
@@ -385,7 +394,7 @@ const liberarMesa = async (req, res) => {
     }
 
     const mesaExistente = await obtenerMesaConGrupo(idMesa);
-    
+
     if (!mesaExistente) {
       return respondError(res, 404, "Mesa no encontrada");
     }
@@ -405,7 +414,7 @@ const liberarMesa = async (req, res) => {
     const mesa = await obtenerMesaConGrupo(idMesa);
 
     emitMesaEstadoCambiado(idMesa, {
-      estado: 'DISPONIBLE',
+      estado: "DISPONIBLE",
       idClienteActual: null,
     });
 
@@ -440,21 +449,21 @@ const obtenerEstadisticasMesas = async (req, res) => {
       total: 0,
     };
 
-    rows.forEach(row => {
+    rows.forEach((row) => {
       const cantidad = parseInt(row.cantidad);
       estadisticas.total += cantidad;
-      
+
       switch (row.estado) {
-        case 'DISPONIBLE':
+        case "DISPONIBLE":
           estadisticas.disponibles = cantidad;
           break;
-        case 'OCUPADA':
+        case "OCUPADA":
           estadisticas.ocupadas = cantidad;
           break;
-        case 'RESERVADA':
+        case "RESERVADA":
           estadisticas.reservadas = cantidad;
           break;
-        case 'FUERA_DE_SERVICIO':
+        case "FUERA_DE_SERVICIO":
           estadisticas.fueraDeServicio = cantidad;
           break;
       }
@@ -487,13 +496,13 @@ const actualizarPosicionMesa = async (req, res) => {
       return respondError(res, 400, "Se requieren posX y posY");
     }
 
-    if (typeof posX !== 'number' || typeof posY !== 'number') {
+    if (typeof posX !== "number" || typeof posY !== "number") {
       return respondError(res, 400, "posX y posY deben ser números");
     }
 
     // Verificar que la mesa existe
     const [mesaExiste] = await promisePool.execute(
-      'SELECT id_mesa FROM Mesa WHERE id_mesa = ?',
+      "SELECT id_mesa FROM Mesa WHERE id_mesa = ?",
       [idMesa]
     );
 
@@ -503,24 +512,24 @@ const actualizarPosicionMesa = async (req, res) => {
 
     // Actualizar posición
     await promisePool.execute(
-      'UPDATE Mesa SET posX = ?, posY = ? WHERE id_mesa = ?',
+      "UPDATE Mesa SET posX = ?, posY = ? WHERE id_mesa = ?",
       [posX, posY, idMesa]
     );
 
     // Obtener mesa actualizada
     const mesa = await obtenerMesaConGrupo(idMesa);
 
-    const io = req.app.get('io');
+    const io = req.app.get("io");
     if (io) {
-      io.to('mesas').emit('mesa:posicion-actualizada', {
-        message: 'Posición de mesa actualizada',
+      io.to("mesas").emit("mesa:posicion-actualizada", {
+        message: "Posición de mesa actualizada",
         data: {
           idMesa,
           posX,
           posY,
-          mesa
+          mesa,
         },
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
     }
 
@@ -584,9 +593,11 @@ const getFacturaActivaMesa = async (req, res) => {
     }
 
     // Obtener los detalles de la factura
-    const { mapDetalleFacturaRows } = require("../helpers/detalleFacturaMapper");
+    const {
+      mapDetalleFacturaRows,
+    } = require("../helpers/detalleFacturaMapper");
     const { mapFacturaConDetalles } = require("../helpers/facturaMapper");
-    
+
     const [detallesRows] = await promisePool.execute(
       `SELECT df.id_detalle,
               df.id_factura,
