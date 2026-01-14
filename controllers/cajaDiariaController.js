@@ -360,21 +360,39 @@ const cerrarCajaDiaria = async (req, res) => {
 
 const obtenerCajaActual = async (req, res) => {
   try {
-    const [cajaRows] = await promisePool.execute(
-      `SELECT id_caja, fecha, fecha_apertura, fecha_cierre,
-              monto_inicial, monto_final, estado, creado_por, cerrado_por
-         FROM CajaDiaria
-        WHERE fecha = CURDATE()
+    // 1. Buscar caja ABIERTA (independientemente de la fecha)
+    let [cajaRows] = await promisePool.execute(
+      `SELECT c.id_caja, c.fecha, c.fecha_apertura, c.fecha_cierre,
+              c.monto_inicial, c.monto_final, c.estado, c.creado_por, c.cerrado_por,
+              u.nombre_usuario as nombre_creador
+         FROM CajaDiaria c
+         LEFT JOIN Usuario u ON c.creado_por = u.id_usuario
+        WHERE c.estado = 'ABIERTA'
         LIMIT 1`
     );
 
+    // 2. Si no hay abierta, buscar la ÚLTIMA registrada (para mostrar estado anterior)
     if (cajaRows.length === 0) {
-      return enviarExito(res, null, "No hay caja registrada para el día de hoy");
+      [cajaRows] = await promisePool.execute(
+        `SELECT c.id_caja, c.fecha, c.fecha_apertura, c.fecha_cierre,
+                c.monto_inicial, c.monto_final, c.estado, c.creado_por, c.cerrado_por,
+                u.nombre_usuario as nombre_creador
+           FROM CajaDiaria c
+           LEFT JOIN Usuario u ON c.creado_por = u.id_usuario
+           ORDER BY c.id_caja DESC
+           LIMIT 1`
+      );
     }
 
-    const caja = mapCajaDiariaRow(cajaRows[0]);
+    if (cajaRows.length === 0) {
+      return enviarExito(res, null, "No hay cajas registradas en el sistema");
+    }
 
-    // Si está abierta, agregamos información de totales actuales
+    const cajaRaw = cajaRows[0];
+    const caja = mapCajaDiariaRow(cajaRaw);
+    caja.nombreCreador = cajaRaw.nombre_creador;
+
+    // Si está ABIERTA, agregamos información de totales actuales
     if (caja.estado === "ABIERTA") {
       const [totalesRows] = await promisePool.execute(
         `SELECT
@@ -384,6 +402,18 @@ const obtenerCajaActual = async (req, res) => {
            COUNT(*) AS cantidad_movimientos
          FROM MovimientoCaja
          WHERE id_caja = ?`,
+        [caja.id]
+      );
+
+      // Obtener desglose por medio de pago
+      const [desgloseRows] = await promisePool.execute(
+        `SELECT mp.nombre as metodo,
+                COALESCE(SUM(CASE WHEN mc.tipo = 'INGRESO' THEN mc.monto ELSE 0 END), 0) as total_ingreso,
+                COALESCE(SUM(CASE WHEN mc.tipo = 'EGRESO' THEN mc.monto ELSE 0 END), 0) as total_egreso
+           FROM MovimientoCaja mc
+           JOIN MedioPago mp ON mc.id_medio_pago = mp.id_medio_pago
+          WHERE mc.id_caja = ?
+          GROUP BY mp.id_medio_pago, mp.nombre`,
         [caja.id]
       );
 
@@ -406,6 +436,7 @@ const obtenerCajaActual = async (req, res) => {
           montoEsperado,
           cantidadMovimientos: totales.cantidad_movimientos || 0,
         },
+        desglose: desgloseRows, // Nuevo campo
       }, "Caja actual obtenida correctamente");
     }
 
@@ -595,7 +626,7 @@ const obtenerMovimientosCaja = async (req, res) => {
          fecha
        FROM MovimientoCaja
        WHERE ${whereClause}
-       ORDER BY fecha ASC, id_mov_caja ASC`,
+       ORDER BY fecha DESC, id_mov_caja DESC`,
       queryParams
     );
 
@@ -696,6 +727,128 @@ const obtenerAuditoriaCaja = async (req, res) => {
   }
 };
 
+const registrarMovimientoManual = async (req, res) => {
+  const usuarioId = req.user?.id;
+
+  if (!usuarioId) {
+    return enviarError(
+      res,
+      401,
+      "No se encontró información del usuario en la sesión"
+    );
+  }
+
+  const { tipo, monto, concepto, metodoPago } = req.body || {};
+
+  // Validaciones
+  if (!tipo || !["INGRESO", "EGRESO"].includes(tipo)) {
+    return enviarError(res, 400, "El tipo debe ser INGRESO o EGRESO");
+  }
+
+  const montoValidado = parseDecimalField(monto, {
+    fieldName: "monto",
+    required: true,
+    allowNegative: false,
+  });
+
+  if (montoValidado.error) {
+    return enviarError(res, 400, montoValidado.error);
+  }
+
+  if (montoValidado.value <= 0) {
+    return enviarError(res, 400, "El monto debe ser mayor a 0");
+  }
+
+  if (!concepto || typeof concepto !== "string" || !concepto.trim()) {
+    return enviarError(res, 400, "El concepto es obligatorio");
+  }
+
+  if (!metodoPago || typeof metodoPago !== "string") {
+    return enviarError(res, 400, "El método de pago es obligatorio");
+  }
+
+  try {
+    const resultado = await withTransaction(async (connection) => {
+      // 1. Verificar si hay caja abierta
+      const [cajaRows] = await connection.execute(
+        `SELECT id_caja FROM CajaDiaria WHERE estado = 'ABIERTA' LIMIT 1`
+      );
+
+      if (cajaRows.length === 0) {
+        const error = new Error("No hay una caja diaria abierta actualmente");
+        error.statusCode = 409;
+        throw error;
+      }
+
+      const idCaja = cajaRows[0].id_caja;
+
+      // 2. Obtener ID del medio de pago
+      const [medioPagoRows] = await connection.execute(
+        `SELECT id_medio_pago FROM MedioPago WHERE nombre = ? LIMIT 1`,
+        [metodoPago]
+      );
+
+      if (medioPagoRows.length === 0) {
+        const error = new Error(
+          `El método de pago '${metodoPago}' no es válido`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const idMedioPago = medioPagoRows[0].id_medio_pago;
+
+      // 3. Insertar movimiento
+      const [insertResult] = await connection.execute(
+        `INSERT INTO MovimientoCaja (
+           id_caja,
+           tipo,
+           monto,
+           concepto,
+           id_medio_pago,
+           id_usuario,
+           fecha
+         )
+         VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+        [
+          idCaja,
+          tipo,
+          montoValidado.value,
+          concepto.trim(),
+          idMedioPago,
+          usuarioId,
+        ]
+      );
+
+      return {
+        id: insertResult.insertId,
+        idCaja,
+        tipo,
+        monto: montoValidado.value,
+        concepto: concepto.trim(),
+        metodoPago,
+        fecha: new Date(),
+      };
+    });
+
+    return enviarExito(
+      res,
+      resultado,
+      "Movimiento manual registrado correctamente",
+      201
+    );
+  } catch (error) {
+    if (error.statusCode) {
+      return enviarError(res, error.statusCode, error.message);
+    }
+
+    console.error("Error al registrar movimiento manual:", error);
+    return enviarError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   abrirCajaDiaria,
   cerrarCajaDiaria,
@@ -704,4 +857,5 @@ module.exports = {
   obtenerDetalleCaja,
   obtenerMovimientosCaja,
   obtenerAuditoriaCaja,
+  registrarMovimientoManual,
 };

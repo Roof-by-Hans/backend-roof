@@ -28,6 +28,10 @@ const mapClienteRow = (row) => {
       tarjeta: {
         id: row.id_tarjeta,
         uuid: row.tarjeta_uuid,
+        saldoActual: parseFloat(row.saldo_actual || 0),
+        tipoSuscripcion: row.tipo_suscripcion || null,
+        nivelSuscripcion: row.nivel_suscripcion || null,
+        limiteCredito: parseFloat(row.limite_credito || 0),
       },
     }),
   };

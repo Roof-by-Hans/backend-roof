@@ -27,6 +27,7 @@ const mesaGrupoRoutes = require("./routes/mesaGrupoRoutes");
 const mesaRoutes = require("./routes/mesaRoutes");
 const cajaDiariaRoutes = require("./routes/cajaDiariaRoutes");
 const mozoRoutes = require("./routes/mozoRoutes");
+const medioPagoRoutes = require("./routes/medioPagoRoutes");
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
@@ -74,6 +75,7 @@ app.use("/api/transacciones", transaccionRoutes);
 app.use("/api/mesas", mesaRoutes);
 app.use("/api/mesas-grupo", mesaGrupoRoutes);
 app.use("/api/caja-diaria", cajaDiariaRoutes);
+app.use("/api/medios-pago", medioPagoRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");

@@ -27,9 +27,15 @@ const getClientes = async (req, res) => {
         c.id_tarjeta,
         c.foto_perfil,
         c.preferencias,
-        t.uuid AS tarjeta_uuid
+        t.uuid AS tarjeta_uuid,
+        t.saldo_actual,
+        ts.nombre AS tipo_suscripcion,
+        ns.nombre AS nivel_suscripcion,
+        ns.limite_credito
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
+       LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
+       LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
        ORDER BY c.id_cliente`
     );
 
@@ -72,9 +78,15 @@ const getClientePorId = async (req, res) => {
         c.id_tarjeta,
         c.foto_perfil,
         c.preferencias,
-        t.uuid AS tarjeta_uuid
+        t.uuid AS tarjeta_uuid,
+        t.saldo_actual,
+        ts.nombre AS tipo_suscripcion,
+        ns.nombre AS nivel_suscripcion,
+        ns.limite_credito
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
+       LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
+       LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
        WHERE c.id_cliente = ?`,
       [id]
     );

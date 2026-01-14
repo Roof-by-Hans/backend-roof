@@ -2,6 +2,12 @@ const { promisePool } = require("../config/database");
 const { mapFacturaConDetalles } = require("../helpers/facturaMapper");
 const { withTransaction } = require("../helpers/transactionHelper");
 const { enviarError, enviarExito } = require("../helpers/responseHelpers");
+const {
+  emitMesaEstadoCambiado,
+  emitGrupoDisuelto,
+  emitMesasSeparadas,
+  emitMesasActualizadas,
+} = require("../websocket");
 
 /**
  * Registrar un consumo de productos y generar factura automáticamente
@@ -142,7 +148,6 @@ const registrarConsumo = async (req, res) => {
       // 5. Verificar saldo o límite de crédito según el tipo de tarjeta
       if (cliente.tipo_suscripcion === "PREPAGA") {
         // PREPAGA: saldo_actual representa dinero disponible (positivo)
-        // Se valida que haya suficiente saldo para el consumo
         const saldoActual = parseFloat(cliente.saldo_actual || 0);
 
         if (saldoActual < total) {
@@ -157,9 +162,23 @@ const registrarConsumo = async (req, res) => {
         }
       } else if (cliente.tipo_suscripcion === "CREDITO") {
         // CRÉDITO: saldo_actual representa deuda acumulada (positivo = debe dinero)
-        // Se valida que la nueva deuda no supere el límite de crédito
         const deudaActual = parseFloat(cliente.saldo_actual || 0);
         const limiteCredito = parseFloat(cliente.limite_credito || 0);
+
+        // Bloqueo proactivo: Si ya excedió su límite antes de empezar, no puede consumir nada más
+        if (deudaActual > limiteCredito) {
+          const error = new Error(
+            "No se puede realizar el consumo porque el cliente ya ha excedido su límite de crédito. Debe saldar su deuda primero."
+          );
+          error.statusCode = 400;
+          error.detalles = {
+            deudaActual: deudaActual,
+            limiteCredito: limiteCredito,
+            excedente: deudaActual - limiteCredito,
+          };
+          throw error;
+        }
+
         const nuevaDeuda = deudaActual + total;
 
         if (nuevaDeuda > limiteCredito) {
@@ -170,7 +189,7 @@ const registrarConsumo = async (req, res) => {
           error.detalles = {
             deudaActual: deudaActual,
             limiteCredito: limiteCredito,
-            creditoDisponible: limiteCredito - deudaActual,
+            creditoDisponible: Math.max(0, limiteCredito - deudaActual),
             totalConsumo: total,
             nuevaDeuda: nuevaDeuda,
           };
@@ -178,19 +197,18 @@ const registrarConsumo = async (req, res) => {
         }
       }
 
-      // 6. Crear la factura
-      // Para tarjetas prepagas, el estado es COBRADA porque ya se descontó del saldo
-      // Para tarjetas de crédito, el estado es PENDIENTE hasta que se pague
-      const estadoFactura =
-        cliente.tipo_suscripcion === "PREPAGA" ? "COBRADA" : "PENDIENTE";
+      // 6. Gestión de Factura (Todas las facturas se consideran aprobadas/cobradas)
+      const estadoFactura = "COBRADA";
+      let idFactura = null;
 
+      // Eliminamos la unificación de pedidos pendientes ya que ahora todas nacen COBRADAS
+      // Si no existe factura para unificar, crear nueva
       const [facturaResult] = await connection.execute(
         `INSERT INTO Factura (id_cliente, id_mesa, id_grupo, fecha, estado, total)
-       VALUES (?, ?, ?, NOW(), ?, ?)`,
+     VALUES (?, ?, ?, NOW(), ?, ?)`,
         [idCliente, idMesa || null, idGrupo || null, estadoFactura, total]
       );
-
-      const idFactura = facturaResult.insertId;
+      idFactura = facturaResult.insertId;
 
       // 7. Insertar los detalles de la factura
       for (const item of productosValidados) {
@@ -208,11 +226,15 @@ const registrarConsumo = async (req, res) => {
       }
 
       // 8. Registrar movimiento en la cuenta del cliente
+      const resumenProductos = productosValidados
+        .map((p) => `${p.cantidad}x ${p.nombreProducto}`)
+        .join(", ");
+
       const observacionesCompletas =
         observaciones ||
-        `Consumo de ${productosValidados.length} producto(s)` +
-          (idMesa ? ` en mesa ${idMesa}` : "") +
-          (idGrupo ? ` en grupo ${idGrupo}` : "");
+        `Consumo: ${resumenProductos}` +
+          (idMesa ? ` (Mesa ${idMesa})` : "") +
+          (idGrupo ? ` (Grupo ${idGrupo})` : "");
 
       // Obtener el ID del tipo de movimiento CONSUMO
       const [tipoMovResult] = await connection.execute(
@@ -252,7 +274,61 @@ const registrarConsumo = async (req, res) => {
         );
       }
 
-      // 10. Obtener la factura completa con todos los detalles
+      // 10. Liberar mesa o grupo si corresponde
+      let mesasLiberadasInfo = {
+        tipo: null, // 'grupo' o 'mesa'
+        id: null,
+        mesas: [], // Lista de IDs de mesas liberadas
+      };
+
+      if (idGrupo) {
+        // Obtener mesas del grupo antes de eliminarlo
+        const [mesasDelGrupo] = await connection.execute(
+          `SELECT id_mesa FROM MesaGrupo WHERE id_grupo = ?`,
+          [idGrupo]
+        );
+
+        if (mesasDelGrupo.length > 0) {
+          const idsMesas = mesasDelGrupo.map((m) => m.id_mesa);
+          const placeholders = idsMesas.map(() => "?").join(", ");
+
+          // Liberar las mesas
+          await connection.execute(
+            `UPDATE Mesa 
+             SET estado = 'DISPONIBLE', id_cliente_actual = NULL 
+             WHERE id_mesa IN (${placeholders})`,
+            idsMesas
+          );
+
+          mesasLiberadasInfo = {
+            tipo: "grupo",
+            id: idGrupo,
+            mesas: idsMesas,
+          };
+        }
+
+        // Eliminar el grupo
+        await connection.execute(
+          `DELETE FROM GrupoMesas WHERE id_grupo = ?`,
+          [idGrupo]
+        );
+      } else if (idMesa) {
+        // Liberar la mesa individual
+        await connection.execute(
+          `UPDATE Mesa 
+           SET estado = 'DISPONIBLE', id_cliente_actual = NULL 
+           WHERE id_mesa = ?`,
+          [idMesa]
+        );
+
+        mesasLiberadasInfo = {
+          tipo: "mesa",
+          id: idMesa,
+          mesas: [idMesa],
+        };
+      }
+
+      // 11. Obtener la factura completa con todos los detalles
       const [facturaCompleta] = await connection.execute(
         `SELECT f.id_factura, f.id_cliente, f.id_mesa, f.id_grupo,
               f.fecha, f.estado, f.total,
@@ -298,10 +374,39 @@ const registrarConsumo = async (req, res) => {
           saldoAnterior: parseFloat(cliente.saldo_actual || 0),
           saldoActual: parseFloat(nuevoSaldo[0].saldo_actual),
         },
+        mesasLiberadasInfo, // Retornar información para emitir eventos fuera del helper
       };
     });
 
-    return enviarExito(res, result, "Consumo registrado exitosamente", 201);
+    // Emitir eventos de WebSocket si hubo liberación de mesas
+    if (result.mesasLiberadasInfo && result.mesasLiberadasInfo.tipo) {
+      const { tipo, id, mesas } = result.mesasLiberadasInfo;
+
+      if (tipo === "grupo") {
+        emitGrupoDisuelto(id, mesas);
+        emitMesasSeparadas({
+          idGrupo: id,
+          mesasSeparadas: mesas,
+        });
+      }
+
+      // Emitir cambio de estado para cada mesa individualmente
+      mesas.forEach((idMesa) => {
+        emitMesaEstadoCambiado(idMesa, {
+          estado: "DISPONIBLE",
+          idClienteActual: null,
+        });
+      });
+
+      // Actualización general para asegurar consistencia
+      emitMesasActualizadas();
+    }
+
+    // Limpiar propiedad interna antes de enviar respuesta
+    const responseData = { ...result };
+    delete responseData.mesasLiberadasInfo;
+
+    return enviarExito(res, responseData, "Consumo registrado exitosamente", 201);
   } catch (error) {
     if (error.statusCode) {
       return enviarError(
@@ -442,7 +547,7 @@ const registrarRecarga = async (req, res) => {
             idCliente,
             idMedioPago,
             montoRecarga,
-            `Recarga de tarjeta ${cliente.id_tarjeta}`,
+            `Recarga de tarjeta - ${cliente.nombre} ${cliente.apellido}`,
             idUsuario,
             idMovimientoCuenta,
           ]
@@ -651,7 +756,7 @@ const registrarPago = async (req, res) => {
             idCliente,
             idMedioPago,
             montoPago,
-            `Pago de deuda - Tarjeta ${cliente.id_tarjeta}`,
+            `Pago de deuda - ${cliente.nombre} ${cliente.apellido}`,
             idUsuario,
             idMovimientoCuenta,
           ]
