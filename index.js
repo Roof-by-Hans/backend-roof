@@ -13,6 +13,7 @@ const { initializeWebSocket } = require("./config/websocket");
 const { handleMulterError } = require("./config/multer");
 const authRoutes = require("./routes/authRoutes");
 const authClienteRoutes = require("./routes/authClienteRoutes");
+const clienteAuthRoutes = require("./routes/clienteAuthRoutes");
 const clienteRoutes = require("./routes/clienteRoutes");
 const usuarioRoutes = require("./routes/usuarioRoutes");
 const categoriaProductoRoutes = require("./routes/categoriaProductoRoutes");
@@ -59,6 +60,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/auth-cliente", authClienteRoutes);
+app.use("/api/auth-cliente", clienteAuthRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/mozos", mozoRoutes);
