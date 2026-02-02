@@ -4,8 +4,13 @@ const {
   getResumenCuenta,
   getMovimientos,
   getFacturas,
+  actualizarPerfil,
+  cambiarContrasena,
+  actualizarFoto,
+  eliminarFoto,
 } = require("../controllers/clienteAuthController");
 const authClienteMiddleware = require("../middlewares/authClienteMiddleware");
+const { uploadClient, handleMulterError } = require("../config/multer");
 
 const router = express.Router();
 
@@ -90,6 +95,220 @@ const router = express.Router();
  *         description: Cliente no encontrado
  */
 router.get("/me", authClienteMiddleware, getPerfilCliente);
+
+/**
+ * @swagger
+ * /api/auth-cliente/me:
+ *   put:
+ *     summary: Actualizar perfil del cliente autenticado
+ *     description: Permite al cliente actualizar su nombre, apellido, teléfono y preferencias
+ *     tags: [Cliente Autenticado]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nombre
+ *               - apellido
+ *             properties:
+ *               nombre:
+ *                 type: string
+ *                 example: Juan
+ *               apellido:
+ *                 type: string
+ *                 example: Pérez
+ *               telefono:
+ *                 type: string
+ *                 example: "+54 11 1234-5678"
+ *               preferencias:
+ *                 type: string
+ *                 example: "Tema oscuro, notificaciones activadas"
+ *     responses:
+ *       200:
+ *         description: Perfil actualizado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Perfil actualizado exitosamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                     nombre:
+ *                       type: string
+ *                     apellido:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     telefono:
+ *                       type: string
+ *                     fotoPerfil:
+ *                       type: string
+ *                       nullable: true
+ *                     preferencias:
+ *                       type: string
+ *                       nullable: true
+ *       400:
+ *         description: Datos inválidos
+ *       401:
+ *         description: Token no proporcionado o inválido
+ *       404:
+ *         description: Cliente no encontrado
+ */
+router.put("/me", authClienteMiddleware, actualizarPerfil);
+
+/**
+ * @swagger
+ * /api/auth-cliente/contrasena:
+ *   put:
+ *     summary: Cambiar contraseña del cliente
+ *     description: Permite al cliente cambiar su contraseña proporcionando la actual y la nueva
+ *     tags: [Cliente Autenticado]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - contrasenaActual
+ *               - contrasenaNueva
+ *             properties:
+ *               contrasenaActual:
+ *                 type: string
+ *                 format: password
+ *                 example: miPasswordActual123
+ *               contrasenaNueva:
+ *                 type: string
+ *                 format: password
+ *                 minLength: 6
+ *                 example: miNuevoPassword456
+ *     responses:
+ *       200:
+ *         description: Contraseña actualizada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Contraseña actualizada exitosamente
+ *       400:
+ *         description: Datos inválidos o contraseña nueva muy corta
+ *       401:
+ *         description: Contraseña actual incorrecta o token inválido
+ *       404:
+ *         description: Cliente no encontrado
+ */
+router.put("/contrasena", authClienteMiddleware, cambiarContrasena);
+
+/**
+ * @swagger
+ * /api/auth-cliente/foto:
+ *   put:
+ *     summary: Actualizar foto de perfil del cliente
+ *     description: Permite al cliente subir o cambiar su foto de perfil
+ *     tags: [Cliente Autenticado]
+ *     security:
+ *       - BearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               foto:
+ *                 type: string
+ *                 format: binary
+ *                 description: Archivo de imagen (jpg, jpeg, png)
+ *     responses:
+ *       200:
+ *         description: Foto actualizada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Foto de perfil actualizada exitosamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     fotoPerfil:
+ *                       type: string
+ *                       example: cliente-1234567890-abc123.jpg
+ *                     fotoPerfilUrl:
+ *                       type: string
+ *                       example: http://localhost:3000/uploads/clientes/cliente-1234567890-abc123.jpg
+ *       400:
+ *         description: No se proporcionó imagen o formato inválido
+ *       401:
+ *         description: Token no proporcionado o inválido
+ *       404:
+ *         description: Cliente no encontrado
+ */
+router.put(
+  "/foto",
+  authClienteMiddleware,
+  uploadClient.single("foto"),
+  handleMulterError,
+  actualizarFoto
+);
+
+/**
+ * @swagger
+ * /api/auth-cliente/foto:
+ *   delete:
+ *     summary: Eliminar foto de perfil del cliente
+ *     description: Permite al cliente eliminar su foto de perfil
+ *     tags: [Cliente Autenticado]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Foto eliminada exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Foto de perfil eliminada exitosamente
+ *       400:
+ *         description: El cliente no tiene foto de perfil
+ *       401:
+ *         description: Token no proporcionado o inválido
+ *       404:
+ *         description: Cliente no encontrado
+ */
+router.delete("/foto", authClienteMiddleware, eliminarFoto);
 
 /**
  * @swagger

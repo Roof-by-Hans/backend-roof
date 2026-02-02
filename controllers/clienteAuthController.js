@@ -1,5 +1,10 @@
+const bcrypt = require("bcrypt");
+const path = require("path");
 const { promisePool } = require("../config/database");
 const asyncHandler = require("../helpers/asyncHandler");
+const { deleteFile, getFileUrl } = require("../config/multer");
+
+const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
 
 /**
  * GET /api/auth-cliente/me
@@ -270,9 +275,263 @@ const getFacturas = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * PUT /api/auth-cliente/me
+ * Actualiza el perfil del cliente autenticado (nombre, apellido, teléfono, preferencias)
+ */
+const actualizarPerfil = asyncHandler(async (req, res) => {
+  const clienteId = req.cliente.id;
+  const { nombre, apellido, telefono, preferencias } = req.body;
+
+  // Validaciones básicas
+  if (!nombre || !apellido) {
+    return res.status(400).json({
+      success: false,
+      message: "Los campos nombre y apellido son obligatorios",
+    });
+  }
+
+  // Validar que el cliente existe
+  const [clienteExiste] = await promisePool.execute(
+    "SELECT id_cliente FROM Cliente WHERE id_cliente = ?",
+    [clienteId]
+  );
+
+  if (clienteExiste.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Cliente no encontrado",
+    });
+  }
+
+  // Actualizar datos del cliente
+  await promisePool.execute(
+    `UPDATE Cliente 
+     SET nombre = ?, apellido = ?, telefono = ?, preferencias = ?
+     WHERE id_cliente = ?`,
+    [nombre, apellido, telefono || null, preferencias || null, clienteId]
+  );
+
+  // Obtener datos actualizados
+  const [rows] = await promisePool.execute(
+    `SELECT 
+      c.id_cliente,
+      c.nombre,
+      c.apellido,
+      c.email,
+      c.telefono,
+      c.foto_perfil,
+      c.preferencias
+     FROM Cliente c
+     WHERE c.id_cliente = ?`,
+    [clienteId]
+  );
+
+  res.json({
+    success: true,
+    message: "Perfil actualizado exitosamente",
+    data: {
+      id: rows[0].id_cliente,
+      nombre: rows[0].nombre,
+      apellido: rows[0].apellido,
+      email: rows[0].email,
+      telefono: rows[0].telefono,
+      fotoPerfil: rows[0].foto_perfil,
+      preferencias: rows[0].preferencias,
+    },
+  });
+});
+
+/**
+ * PUT /api/auth-cliente/contrasena
+ * Cambia la contraseña del cliente autenticado
+ */
+const cambiarContrasena = asyncHandler(async (req, res) => {
+  const clienteId = req.cliente.id;
+  const { contrasenaActual, contrasenaNueva } = req.body;
+
+  // Validaciones básicas
+  if (!contrasenaActual || !contrasenaNueva) {
+    return res.status(400).json({
+      success: false,
+      message: "La contraseña actual y la nueva son obligatorias",
+    });
+  }
+
+  if (contrasenaNueva.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "La contraseña nueva debe tener al menos 6 caracteres",
+    });
+  }
+
+  // Obtener la contraseña actual del cliente
+  const [rows] = await promisePool.execute(
+    "SELECT contrasena FROM Cliente WHERE id_cliente = ?",
+    [clienteId]
+  );
+
+  if (rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Cliente no encontrado",
+    });
+  }
+
+  // Verificar que la contraseña actual sea correcta
+  const contrasenaValida = await bcrypt.compare(
+    contrasenaActual,
+    rows[0].contrasena
+  );
+
+  if (!contrasenaValida) {
+    return res.status(401).json({
+      success: false,
+      message: "La contraseña actual es incorrecta",
+    });
+  }
+
+  // Hash de la nueva contraseña
+  const hashedPassword = await bcrypt.hash(contrasenaNueva, SALT_ROUNDS);
+
+  // Actualizar contraseña
+  await promisePool.execute(
+    "UPDATE Cliente SET contrasena = ? WHERE id_cliente = ?",
+    [hashedPassword, clienteId]
+  );
+
+  res.json({
+    success: true,
+    message: "Contraseña actualizada exitosamente",
+  });
+});
+
+/**
+ * PUT /api/auth-cliente/foto
+ * Actualiza la foto de perfil del cliente autenticado
+ */
+const actualizarFoto = asyncHandler(async (req, res) => {
+  const clienteId = req.cliente.id;
+  const nuevaFoto = req.file ? req.file.filename : null;
+
+  if (!nuevaFoto) {
+    return res.status(400).json({
+      success: false,
+      message: "No se proporcionó una imagen",
+    });
+  }
+
+  // Obtener la foto actual del cliente
+  const [rows] = await promisePool.execute(
+    "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+    [clienteId]
+  );
+
+  if (rows.length === 0) {
+    // Eliminar la imagen recién subida
+    const rutaImagen = path.join(
+      __dirname,
+      "..",
+      "uploads",
+      "clientes",
+      nuevaFoto
+    );
+    await deleteFile(rutaImagen);
+
+    return res.status(404).json({
+      success: false,
+      message: "Cliente no encontrado",
+    });
+  }
+
+  const fotoAnterior = rows[0].foto_perfil;
+
+  // Actualizar la foto en la base de datos
+  await promisePool.execute(
+    "UPDATE Cliente SET foto_perfil = ? WHERE id_cliente = ?",
+    [nuevaFoto, clienteId]
+  );
+
+  // Eliminar la foto anterior si existía
+  if (fotoAnterior) {
+    const rutaFotoAnterior = path.join(
+      __dirname,
+      "..",
+      "uploads",
+      "clientes",
+      fotoAnterior
+    );
+    await deleteFile(rutaFotoAnterior).catch((err) => {
+      console.error("Error al eliminar foto anterior:", err);
+    });
+  }
+
+  const fotoPerfilUrl = getFileUrl(req, nuevaFoto, "clientes");
+
+  res.json({
+    success: true,
+    message: "Foto de perfil actualizada exitosamente",
+    data: {
+      fotoPerfil: nuevaFoto,
+      fotoPerfilUrl,
+    },
+  });
+});
+
+/**
+ * DELETE /api/auth-cliente/foto
+ * Elimina la foto de perfil del cliente autenticado
+ */
+const eliminarFoto = asyncHandler(async (req, res) => {
+  const clienteId = req.cliente.id;
+
+  // Obtener la foto actual del cliente
+  const [rows] = await promisePool.execute(
+    "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+    [clienteId]
+  );
+
+  if (rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Cliente no encontrado",
+    });
+  }
+
+  const fotoActual = rows[0].foto_perfil;
+
+  if (!fotoActual) {
+    return res.status(400).json({
+      success: false,
+      message: "El cliente no tiene foto de perfil",
+    });
+  }
+
+  // Eliminar la referencia en la base de datos
+  await promisePool.execute(
+    "UPDATE Cliente SET foto_perfil = NULL WHERE id_cliente = ?",
+    [clienteId]
+  );
+
+  // Eliminar el archivo físico
+  const rutaFoto = path.join(__dirname, "..", "uploads", "clientes", fotoActual);
+  await deleteFile(rutaFoto).catch((err) => {
+    console.error("Error al eliminar archivo de foto:", err);
+  });
+
+  res.json({
+    success: true,
+    message: "Foto de perfil eliminada exitosamente",
+  });
+});
+
 module.exports = {
   getPerfilCliente,
   getResumenCuenta,
   getMovimientos,
   getFacturas,
+  actualizarPerfil,
+  cambiarContrasena,
+  actualizarFoto,
+  eliminarFoto,
 };
