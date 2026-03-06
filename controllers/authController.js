@@ -12,13 +12,13 @@ const login = asyncHandler(async (req, res) => {
   }
 
   const [rows] = await promisePool.execute(
-    `SELECT u.id_usuario, u.nombre_usuario, u.contrasena, u.activo,
+    `SELECT u.id_usuario, u.nombre_usuario, u.contrasena, u.activo, u.foto_perfil,
             GROUP_CONCAT(r.nombre) AS roles
      FROM Usuario u
      LEFT JOIN UsuarioRol ur ON u.id_usuario = ur.id_usuario
      LEFT JOIN Rol r ON ur.id_rol = r.id_rol
      WHERE u.nombre_usuario = ?
-     GROUP BY u.id_usuario, u.nombre_usuario, u.contrasena, u.activo`,
+     GROUP BY u.id_usuario, u.nombre_usuario, u.contrasena, u.activo, u.foto_perfil`,
     [nombreUsuario]
   );
 
@@ -46,13 +46,21 @@ const login = asyncHandler(async (req, res) => {
     roles: roleNames,
   });
 
+  const usuarioData = {
+    id: usuario.id_usuario,
+    nombreUsuario: usuario.nombre_usuario,
+    roles: roleNames,
+  };
+
+  if (usuario.foto_perfil) {
+    const { getFileUrl } = require("../config/multer");
+    usuarioData.fotoPerfil = usuario.foto_perfil;
+    usuarioData.fotoPerfilUrl = getFileUrl(req, usuario.foto_perfil, "usuarios");
+  }
+
   return enviarExito(res, {
     token,
-    usuario: {
-      id: usuario.id_usuario,
-      nombreUsuario: usuario.nombre_usuario,
-      roles: roleNames,
-    },
+    usuario: usuarioData,
   }, "Inicio de sesión exitoso");
 });
 
