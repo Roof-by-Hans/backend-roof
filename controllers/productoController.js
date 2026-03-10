@@ -40,7 +40,7 @@ const categoriaExiste = async (idCategoria) => {
   const [rows] = await promisePool.execute(
     `SELECT id_categoria
      FROM CategoriaProducto
-     WHERE id_categoria = ?
+     WHERE id_categoria = ? AND habilitar = 1
      LIMIT 1`,
     [idCategoria]
   );
@@ -59,7 +59,7 @@ const obtenerProductoPorId = async (id) => {
             c.nombre AS nombre_categoria
        FROM Producto p
        INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
-      WHERE p.id_producto = ?`,
+       WHERE p.id_producto = ? AND p.habilitar = 1`,
     [id]
   );
 
@@ -78,6 +78,7 @@ const getProductos = async (req, res) => {
               c.nombre AS nombre_categoria
          FROM Producto p
          INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
+         WHERE p.habilitar = 1
          ORDER BY p.nombre`
     );
 
@@ -234,8 +235,8 @@ const crearProducto = async (req, res) => {
     }
 
     const [result] = await promisePool.execute(
-      `INSERT INTO Producto (nombre, precio_unitario, id_categoria, foto_principal, descripcion)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO Producto (nombre, precio_unitario, id_categoria, foto_principal, descripcion, habilitar)
+       VALUES (?, ?, ?, ?, ?, 1)`,
       [nombre, precioUnitario, idCategoria, fotoPrincipal, descripcion]
     );
 
@@ -291,9 +292,16 @@ const actualizarProducto = async (req, res) => {
       });
     }
 
-    const productoActual = await obtenerProductoPorId(id);
+    // Verificar que el producto existe y está habilitado
+    const [productoActual] = await promisePool.execute(
+      `SELECT p.id_producto, p.nombre, p.precio_unitario, p.id_categoria, p.foto_principal, p.descripcion, c.nombre AS nombre_categoria
+       FROM Producto p
+       INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
+       WHERE p.id_producto = ? AND p.habilitar = 1`,
+      [id]
+    );
 
-    if (!productoActual) {
+    if (productoActual.length === 0) {
       // Si se subió una imagen, eliminarla porque el producto no existe
       if (req.file) {
         const rutaImagen = path.join(
@@ -311,6 +319,8 @@ const actualizarProducto = async (req, res) => {
         message: "Producto no encontrado",
       });
     }
+
+    const productoActualData = productoActual[0];
 
     // Función auxiliar para eliminar imagen subida en caso de error
     const eliminarImagenSubida = async () => {
@@ -404,13 +414,13 @@ const actualizarProducto = async (req, res) => {
 
     if (req.file) {
       // Si hay una imagen anterior, eliminarla
-      if (productoActual.foto_principal) {
+      if (productoActualData.foto_principal) {
         const rutaImagenAnterior = path.join(
           __dirname,
           "..",
           "uploads",
           "productos",
-          productoActual.foto_principal
+          productoActualData.foto_principal
         );
         await deleteFile(rutaImagenAnterior);
       }
@@ -419,13 +429,13 @@ const actualizarProducto = async (req, res) => {
       valores.push(req.file.filename);
     } else if (eliminarImagen) {
       // Si se solicita eliminar la imagen sin subir una nueva
-      if (productoActual.foto_principal) {
+      if (productoActualData.foto_principal) {
         const rutaImagenAnterior = path.join(
           __dirname,
           "..",
           "uploads",
           "productos",
-          productoActual.foto_principal
+          productoActualData.foto_principal
         );
         await deleteFile(rutaImagenAnterior);
       }
@@ -505,20 +515,20 @@ const eliminarProducto = async (req, res) => {
       });
     }
 
-    // Obtener el producto para eliminar la imagen asociada
-    const productoAEliminar = await obtenerProductoPorId(id);
+    // Obtener el producto para verificar que existe
+    const productoExiste = await obtenerProductoPorId(id);
 
-    if (!productoAEliminar) {
+    if (!productoExiste) {
       return res.status(404).json({
         success: false,
         message: "Producto no encontrado",
       });
     }
 
-    // Eliminar el producto de la base de datos
+    // Borrado lógico - NO eliminamos la imagen del servidor
+    // La imagen se conserva por si el producto se reactiva posteriormente
     const [result] = await promisePool.execute(
-      `DELETE FROM Producto
-       WHERE id_producto = ?`,
+      `UPDATE Producto SET habilitar = 0 WHERE id_producto = ?`,
       [id]
     );
 
@@ -529,21 +539,9 @@ const eliminarProducto = async (req, res) => {
       });
     }
 
-    // Eliminar la imagen asociada si existe
-    if (productoAEliminar.foto_principal) {
-      const rutaImagen = path.join(
-        __dirname,
-        "..",
-        "uploads",
-        "productos",
-        productoAEliminar.foto_principal
-      );
-      await deleteFile(rutaImagen);
-    }
-
     res.json({
       success: true,
-      message: "Producto eliminado correctamente",
+      message: "Producto deshabilitado correctamente",
       data: { id },
     });
   } catch (error) {

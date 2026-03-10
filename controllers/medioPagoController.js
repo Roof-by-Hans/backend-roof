@@ -4,7 +4,7 @@ const { enviarExito, enviarError } = require("../helpers/responseHelpers");
 const obtenerMediosPago = async (req, res) => {
   try {
     let [rows] = await promisePool.execute(
-      "SELECT id_medio_pago, nombre FROM MedioPago ORDER BY nombre ASC"
+      "SELECT id_medio_pago, nombre FROM MedioPago WHERE habilitar = 1 ORDER BY nombre ASC"
     );
 
     // Si no hay medios de pago, insertar los por defecto
@@ -13,14 +13,14 @@ const obtenerMediosPago = async (req, res) => {
       
       for (const nombre of defaultMedios) {
         await promisePool.execute(
-          "INSERT IGNORE INTO MedioPago (nombre) VALUES (?)",
+          "INSERT IGNORE INTO MedioPago (nombre, habilitar) VALUES (?, 1)",
           [nombre]
         );
       }
 
       // Volver a consultar
       [rows] = await promisePool.execute(
-        "SELECT id_medio_pago, nombre FROM MedioPago ORDER BY nombre ASC"
+        "SELECT id_medio_pago, nombre FROM MedioPago WHERE habilitar = 1 ORDER BY nombre ASC"
       );
     }
 

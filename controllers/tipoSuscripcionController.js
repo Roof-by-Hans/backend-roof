@@ -12,7 +12,7 @@ const asyncHandler = require("../helpers/asyncHandler");
  */
 const getTiposSuscripcion = asyncHandler(async (req, res) => {
   const [rows] = await promisePool.execute(
-    `SELECT id_tipo, nombre FROM TipoSuscripcion ORDER BY nombre`
+    `SELECT id_tipo, nombre FROM TipoSuscripcion WHERE habilitar = 1 ORDER BY nombre`
   );
 
   res.json({
@@ -29,7 +29,7 @@ const getTipoSuscripcionPorId = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const [rows] = await promisePool.execute(
-    `SELECT id_tipo, nombre FROM TipoSuscripcion WHERE id_tipo = ?`,
+    `SELECT id_tipo, nombre FROM TipoSuscripcion WHERE id_tipo = ? AND habilitar = 1`,
     [id]
   );
 
@@ -71,23 +71,48 @@ const crearTipoSuscripcion = asyncHandler(async (req, res) => {
     });
   }
 
-  // Verificar si ya existe un tipo con ese nombre
+  // Verificar si ya existe un tipo con ese nombre (habilitado o no)
   const [existente] = await promisePool.execute(
     `SELECT id_tipo FROM TipoSuscripcion WHERE nombre = ?`,
     [nombreUpper]
   );
 
   if (existente.length > 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Ya existe un tipo de suscripción con ese nombre",
+    // Verificar si está habilitado
+    const [habilitado] = await promisePool.execute(
+      `SELECT id_tipo FROM TipoSuscripcion WHERE nombre = ? AND habilitar = 1`,
+      [nombreUpper]
+    );
+    
+    if (habilitado.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Ya existe un tipo de suscripción con ese nombre",
+      });
+    }
+    
+    // Si existe pero deshabilitado, reactivarlo
+    await promisePool.execute(
+      `UPDATE TipoSuscripcion SET habilitar = 1 WHERE nombre = ?`,
+      [nombreUpper]
+    );
+    
+    const [tipoReactivado] = await promisePool.execute(
+      `SELECT id_tipo, nombre FROM TipoSuscripcion WHERE nombre = ?`,
+      [nombreUpper]
+    );
+    
+    return res.status(201).json({
+      success: true,
+      data: mapTipoSuscripcionRow(tipoReactivado[0]),
+      message: "Tipo de suscripción reactivado exitosamente",
     });
   }
 
   const tipoData = mapTipoSuscripcionToDB({ nombre: nombreUpper });
 
   const [result] = await promisePool.execute(
-    `INSERT INTO TipoSuscripcion (nombre) VALUES (?)`,
+    `INSERT INTO TipoSuscripcion (nombre, habilitar) VALUES (?, 1)`,
     [tipoData.nombre]
   );
 
@@ -111,9 +136,9 @@ const actualizarTipoSuscripcion = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { nombre } = req.body;
 
-  // Verificar que el tipo existe
+  // Verificar que el tipo existe y está habilitado
   const [tipoExiste] = await promisePool.execute(
-    `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ?`,
+    `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ? AND habilitar = 1`,
     [id]
   );
 
@@ -142,9 +167,9 @@ const actualizarTipoSuscripcion = asyncHandler(async (req, res) => {
     });
   }
 
-  // Verificar si ya existe otro tipo con ese nombre
+  // Verificar si ya existe otro tipo con ese nombre (habilitado)
   const [existente] = await promisePool.execute(
-    `SELECT id_tipo FROM TipoSuscripcion WHERE nombre = ? AND id_tipo != ?`,
+    `SELECT id_tipo FROM TipoSuscripcion WHERE nombre = ? AND id_tipo != ? AND habilitar = 1`,
     [nombreUpper, id]
   );
 
@@ -174,14 +199,14 @@ const actualizarTipoSuscripcion = asyncHandler(async (req, res) => {
 });
 
 /**
- * Eliminar un tipo de suscripción
+ * Eliminar un tipo de suscripción (borrado lógico)
  */
 const eliminarTipoSuscripcion = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // Verificar que el tipo existe
+  // Verificar que el tipo existe y está habilitado
   const [tipoExiste] = await promisePool.execute(
-    `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ?`,
+    `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ? AND habilitar = 1`,
     [id]
   );
 
@@ -205,14 +230,15 @@ const eliminarTipoSuscripcion = asyncHandler(async (req, res) => {
     });
   }
 
+  // Borrado lógico
   await promisePool.execute(
-    `DELETE FROM TipoSuscripcion WHERE id_tipo = ?`,
+    `UPDATE TipoSuscripcion SET habilitar = 0 WHERE id_tipo = ?`,
     [id]
   );
 
   res.json({
     success: true,
-    message: "Tipo de suscripción eliminado exitosamente",
+    message: "Tipo de suscripción deshabilitado exitosamente",
   });
 });
 

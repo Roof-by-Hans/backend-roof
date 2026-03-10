@@ -11,7 +11,7 @@ const asyncHandler = require("../helpers/asyncHandler");
  */
 const getNivelesSuscripcion = asyncHandler(async (req, res) => {
   const [rows] = await promisePool.execute(
-    `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion ORDER BY nombre`
+    `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion WHERE habilitar = 1 ORDER BY nombre`
   );
 
   res.json({
@@ -28,7 +28,7 @@ const getNivelSuscripcionPorId = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const [rows] = await promisePool.execute(
-    `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion WHERE id_nivel = ?`,
+    `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion WHERE id_nivel = ? AND habilitar = 1`,
     [id]
   );
 
@@ -67,16 +67,41 @@ const crearNivelSuscripcion = asyncHandler(async (req, res) => {
     });
   }
 
-  // Verificar si ya existe un nivel con ese nombre
+  // Verificar si ya existe un nivel con ese nombre (habilitado o no)
   const [existente] = await promisePool.execute(
     `SELECT id_nivel FROM NivelSuscripcion WHERE nombre = ?`,
     [nombre.trim()]
   );
 
   if (existente.length > 0) {
-    return res.status(400).json({
-      success: false,
-      message: "Ya existe un nivel de suscripción con ese nombre",
+    // Verificar si está habilitado
+    const [habilitado] = await promisePool.execute(
+      `SELECT id_nivel FROM NivelSuscripcion WHERE nombre = ? AND habilitar = 1`,
+      [nombre.trim()]
+    );
+    
+    if (habilitado.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Ya existe un nivel de suscripción con ese nombre",
+      });
+    }
+    
+    // Si existe pero deshabilitado, actualizar y reactivar
+    await promisePool.execute(
+      `UPDATE NivelSuscripcion SET habilitar = 1, limite_credito = ? WHERE nombre = ?`,
+      [parseFloat(limite_credito), nombre.trim()]
+    );
+    
+    const [nivelReactivado] = await promisePool.execute(
+      `SELECT id_nivel, nombre, limite_credito FROM NivelSuscripcion WHERE nombre = ?`,
+      [nombre.trim()]
+    );
+    
+    return res.status(201).json({
+      success: true,
+      data: mapNivelSuscripcionRow(nivelReactivado[0]),
+      message: "Nivel de suscripción reactivado exitosamente",
     });
   }
 
@@ -86,7 +111,7 @@ const crearNivelSuscripcion = asyncHandler(async (req, res) => {
   });
 
   const [result] = await promisePool.execute(
-    `INSERT INTO NivelSuscripcion (nombre, limite_credito) VALUES (?, ?)`,
+    `INSERT INTO NivelSuscripcion (nombre, limite_credito, habilitar) VALUES (?, ?, 1)`,
     [nivelData.nombre, nivelData.limite_credito]
   );
 
@@ -110,9 +135,9 @@ const actualizarNivelSuscripcion = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { nombre, limite_credito } = req.body;
 
-  // Verificar que el nivel existe
+  // Verificar que el nivel existe y está habilitado
   const [nivelExiste] = await promisePool.execute(
-    `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
+    `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ? AND habilitar = 1`,
     [id]
   );
 
@@ -138,9 +163,9 @@ const actualizarNivelSuscripcion = asyncHandler(async (req, res) => {
     });
   }
 
-  // Verificar si ya existe otro nivel con ese nombre
+  // Verificar si ya existe otro nivel con ese nombre (habilitado)
   const [existente] = await promisePool.execute(
-    `SELECT id_nivel FROM NivelSuscripcion WHERE nombre = ? AND id_nivel != ?`,
+    `SELECT id_nivel FROM NivelSuscripcion WHERE nombre = ? AND id_nivel != ? AND habilitar = 1`,
     [nombre.trim(), id]
   );
 
@@ -170,14 +195,14 @@ const actualizarNivelSuscripcion = asyncHandler(async (req, res) => {
 });
 
 /**
- * Eliminar un nivel de suscripción
+ * Eliminar un nivel de suscripción (borrado lógico)
  */
 const eliminarNivelSuscripcion = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // Verificar que el nivel existe
+  // Verificar que el nivel existe y está habilitado
   const [nivelExiste] = await promisePool.execute(
-    `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
+    `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ? AND habilitar = 1`,
     [id]
   );
 
@@ -201,14 +226,15 @@ const eliminarNivelSuscripcion = asyncHandler(async (req, res) => {
     });
   }
 
+  // Borrado lógico
   await promisePool.execute(
-    `DELETE FROM NivelSuscripcion WHERE id_nivel = ?`,
+    `UPDATE NivelSuscripcion SET habilitar = 0 WHERE id_nivel = ?`,
     [id]
   );
 
   res.json({
     success: true,
-    message: "Nivel de suscripción eliminado exitosamente",
+    message: "Nivel de suscripción deshabilitado exitosamente",
   });
 });
 

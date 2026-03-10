@@ -38,19 +38,20 @@ app.use(
     origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
-// Habilitar compresión HTTP (gzip/deflate)
-app.use(compression({
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) {
-      return false;
-    }
-    return compression.filter(req, res);
-  },
-  level: 6 // Balance entre velocidad y compresión
-}));
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.headers["x-no-compression"]) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+    level: 6,
+  }),
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -141,7 +142,7 @@ console.log("🔌 WebSocket configurado y disponible en rutas");
 server.listen(PORT, async () => {
   console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
   console.log(
-    `📚 Documentación disponible en http://localhost:${PORT}/api-docs`
+    `📚 Documentación disponible en http://localhost:${PORT}/api-docs`,
   );
 
   await testConnection();
