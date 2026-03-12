@@ -1,7 +1,13 @@
 const { promisePool } = require("../config/database");
 const { mapFacturaConDetalles } = require("../helpers/facturaMapper");
+const { mapMesaConGrupoRows } = require("../helpers/mesaGrupoMapper");
 const { withTransaction } = require("../helpers/transactionHelper");
 const { enviarError, enviarExito } = require("../helpers/responseHelpers");
+const {
+  emitMesaEstadoCambiado,
+  emitMesasConGrupos,
+  emitPagoRevertido,
+} = require("../websocket");
 
 /**
  * Registrar un consumo de productos y generar factura automáticamente
@@ -705,8 +711,290 @@ const registrarPago = async (req, res) => {
   }
 };
 
+/**
+ * Revertir una factura COBRADA o PENDIENTE (rollback de pago)
+ * - Restaura el saldo/deuda de la tarjeta al estado previo al consumo
+ * - Marca la factura como ANULADA
+ * - Libera la mesa o grupo de mesas si corresponde
+ * - Registra MovimientoCaja EGRESO si hay caja abierta; si no, devuelve warning
+ */
+const revertirFactura = async (req, res) => {
+  const idFactura = parseInt(req.params.idFactura);
+  const { motivo } = req.body;
+
+  if (!Number.isInteger(idFactura) || idFactura <= 0) {
+    return enviarError(res, 400, "El ID de la factura no es válido");
+  }
+
+  if (!motivo || typeof motivo !== "string" || motivo.trim() === "") {
+    return enviarError(res, 400, "El motivo de reversión es obligatorio");
+  }
+
+  const motivoLimpio = motivo.trim();
+  const idUsuario = req.user?.id || null;
+
+  try {
+    const result = await withTransaction(async (connection) => {
+      // 1. Obtener factura + tarjeta + tipo de suscripción
+      const [facturaRows] = await connection.execute(
+        `SELECT f.id_factura, f.id_cliente, f.id_mesa, f.id_grupo,
+                f.estado, f.total,
+                t.id_tarjeta, t.saldo_actual,
+                ts.nombre AS tipo_suscripcion
+         FROM Factura f
+         INNER JOIN Cliente c ON c.id_cliente = f.id_cliente
+         LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
+         LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
+         WHERE f.id_factura = ?`,
+        [idFactura]
+      );
+
+      if (facturaRows.length === 0) {
+        const error = new Error(`No existe una factura con ID ${idFactura}`);
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const factura = facturaRows[0];
+
+      // 2. Validar estado
+      if (factura.estado === "ANULADA") {
+        const error = new Error(
+          "La factura ya está anulada y no puede revertirse nuevamente"
+        );
+        error.statusCode = 409;
+        throw error;
+      }
+
+      if (!["COBRADA", "PENDIENTE"].includes(factura.estado)) {
+        const error = new Error(
+          `No se puede revertir una factura en estado ${factura.estado}`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+
+      const totalFactura = parseFloat(factura.total);
+      const saldoAnterior = parseFloat(factura.saldo_actual || 0);
+
+      // 3. Calcular totalPagado (suma de MovimientoCuenta tipo PAGO para esta factura)
+      const [pagosRows] = await connection.execute(
+        `SELECT COALESCE(SUM(mc.monto), 0) AS total_pagado
+         FROM MovimientoCuenta mc
+         INNER JOIN TipoMovimiento tm ON tm.id_tipo_mov = mc.id_tipo_mov
+         WHERE mc.id_factura = ? AND tm.nombre = 'PAGO'`,
+        [idFactura]
+      );
+      const totalPagado = parseFloat(pagosRows[0].total_pagado || 0);
+
+      // 4. Calcular delta de saldo y lógica de caja:
+      //    PREPAGA COBRADA       → devolver saldo (+total)
+      //    CRÉDITO PENDIENTE     → cancelar deuda acumulada (-total)
+      //    CRÉDITO COBRADA       → deshacer consumo Y pago (net = totalPagado - total)
+      let delta = 0;
+      let crearMovCaja = false;
+      let montoCaja = 0;
+
+      if (factura.tipo_suscripcion === "PREPAGA") {
+        delta = totalFactura;
+        crearMovCaja = true;
+        montoCaja = totalFactura;
+      } else if (factura.tipo_suscripcion === "CREDITO") {
+        if (factura.estado === "PENDIENTE") {
+          delta = -totalFactura;
+          crearMovCaja = false;
+        } else {
+          delta = totalPagado - totalFactura;
+          crearMovCaja = totalPagado > 0;
+          montoCaja = totalPagado;
+        }
+      }
+
+      // 5. Actualizar saldo de tarjeta
+      await connection.execute(
+        `UPDATE Tarjeta SET saldo_actual = saldo_actual + ? WHERE id_tarjeta = ?`,
+        [delta, factura.id_tarjeta]
+      );
+
+      // 6. Registrar MovimientoCuenta tipo REVERSION
+      const [tipoMovRevResult] = await connection.execute(
+        `SELECT id_tipo_mov FROM TipoMovimiento WHERE nombre = 'REVERSION' LIMIT 1`
+      );
+      const idTipoMovReversion =
+        tipoMovRevResult.length > 0 ? tipoMovRevResult[0].id_tipo_mov : null;
+
+      await connection.execute(
+        `INSERT INTO MovimientoCuenta
+           (id_cliente, id_tarjeta, fecha, monto, id_tipo_mov, id_factura, id_usuario, observaciones)
+         VALUES (?, ?, NOW(), ?, ?, ?, ?, ?)`,
+        [
+          factura.id_cliente,
+          factura.id_tarjeta,
+          totalFactura,
+          idTipoMovReversion,
+          idFactura,
+          idUsuario,
+          `Reversión de factura #${idFactura}: ${motivoLimpio}`,
+        ]
+      );
+
+      // 7. MovimientoCaja EGRESO (solo si corresponde y hay caja abierta)
+      let movimientoCajaRegistrado = false;
+      let sinCaja = false;
+
+      if (crearMovCaja && montoCaja > 0) {
+        const [cajaAbierta] = await connection.execute(
+          `SELECT id_caja FROM CajaDiaria WHERE fecha = CURDATE() AND estado = 'ABIERTA' LIMIT 1`
+        );
+
+        if (cajaAbierta.length > 0) {
+          await connection.execute(
+            `INSERT INTO MovimientoCaja
+               (id_caja, id_cliente, tipo, monto, concepto, id_usuario, fecha)
+             VALUES (?, ?, 'EGRESO', ?, ?, ?, NOW())`,
+            [
+              cajaAbierta[0].id_caja,
+              factura.id_cliente,
+              montoCaja,
+              `Reversión de factura #${idFactura}: ${motivoLimpio}`,
+              idUsuario,
+            ]
+          );
+          movimientoCajaRegistrado = true;
+        } else {
+          sinCaja = true;
+        }
+      }
+
+      // 8. Anular la factura
+      await connection.execute(
+        `UPDATE Factura SET estado = 'ANULADA' WHERE id_factura = ?`,
+        [idFactura]
+      );
+
+      // 9. Restaurar mesa/grupo DENTRO de la transacción (antes del commit)
+      const mesasRestauradas = [];
+      let mesasDatos = null;
+
+      if (factura.id_mesa) {
+        const [mesaRows] = await connection.execute(
+          `SELECT id_mesa, estado, id_cliente_actual FROM Mesa WHERE id_mesa = ?`,
+          [factura.id_mesa]
+        );
+        if (
+          mesaRows.length > 0 &&
+          mesaRows[0].estado === "OCUPADA" &&
+          // eslint-disable-next-line eqeqeq
+          mesaRows[0].id_cliente_actual == factura.id_cliente
+        ) {
+          await connection.execute(
+            `UPDATE Mesa SET estado = 'DISPONIBLE', id_cliente_actual = NULL
+             WHERE id_mesa = ?`,
+            [factura.id_mesa]
+          );
+          mesasRestauradas.push({ idMesa: factura.id_mesa });
+          mesasDatos = { tipo: "individual", idMesa: factura.id_mesa };
+        }
+      } else if (factura.id_grupo) {
+        const [mesasGrupo] = await connection.execute(
+          `SELECT m.id_mesa FROM Mesa m
+           INNER JOIN MesaGrupo mg ON mg.id_mesa = m.id_mesa
+           WHERE mg.id_grupo = ? AND m.id_cliente_actual = ? AND m.estado = 'OCUPADA'`,
+          [factura.id_grupo, factura.id_cliente]
+        );
+
+        for (const mesaRow of mesasGrupo) {
+          await connection.execute(
+            `UPDATE Mesa SET estado = 'DISPONIBLE', id_cliente_actual = NULL
+             WHERE id_mesa = ?`,
+            [mesaRow.id_mesa]
+          );
+          mesasRestauradas.push({ idMesa: mesaRow.id_mesa });
+        }
+
+        if (mesasGrupo.length > 0) {
+          mesasDatos = { tipo: "grupo" };
+        }
+      }
+
+      const [nuevoSaldoRows] = await connection.execute(
+        `SELECT saldo_actual FROM Tarjeta WHERE id_tarjeta = ?`,
+        [factura.id_tarjeta]
+      );
+      const saldoActual = parseFloat(nuevoSaldoRows[0]?.saldo_actual || 0);
+
+      return {
+        factura: {
+          id: idFactura,
+          idCliente: factura.id_cliente,
+          idMesa: factura.id_mesa || null,
+          idGrupo: factura.id_grupo || null,
+          estadoAnterior: factura.estado,
+          estadoActual: "ANULADA",
+          total: totalFactura,
+        },
+        saldos: {
+          anterior: saldoAnterior,
+          delta,
+          actual: saldoActual,
+          tipoTarjeta: factura.tipo_suscripcion,
+        },
+        movimientoCajaRegistrado,
+        mesasRestauradas,
+        // campos internos para post-commit
+        sinCaja,
+        mesasDatos,
+      };
+    });
+
+    // 10. Post-commit: emitir WebSocket en orden (mesas primero, luego pago revertido)
+    const { sinCaja, mesasDatos } = result;
+
+    if (mesasDatos) {
+      if (mesasDatos.tipo === "individual") {
+        emitMesaEstadoCambiado(mesasDatos.idMesa, {
+          estado: "DISPONIBLE",
+          idClienteActual: null,
+        });
+      } else {
+        try {
+          const [rows] = await promisePool.execute(
+            `SELECT id_mesa, nombre_mesa, estado_mesa, id_cliente_actual,
+                    id_grupo, nombre_grupo, posX, posY
+             FROM vw_mesas_con_grupo
+             ORDER BY nombre_mesa`
+          );
+          emitMesasConGrupos(mapMesaConGrupoRows(rows));
+        } catch (wsError) {
+          console.error("Error al emitir mesas actualizadas:", wsError.message);
+        }
+      }
+    }
+
+    emitPagoRevertido(result.factura);
+
+    // 11. Construir respuesta (omitir campos internos, agregar warning si aplica)
+    const { sinCaja: _sc, mesasDatos: _md, ...datosRespuesta } = result;
+    const respuesta = {
+      ...datosRespuesta,
+      ...(sinCaja && { warning: "PAGO_REVERTIDO_SIN_CAJA" }),
+    };
+
+    return enviarExito(res, respuesta, "Factura revertida exitosamente");
+  } catch (error) {
+    if (error.statusCode) {
+      return enviarError(res, error.statusCode, error.message);
+    }
+    console.error("Error al revertir factura:", error);
+    return enviarError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   registrarConsumo,
   registrarRecarga,
   registrarPago,
+  revertirFactura,
 };
