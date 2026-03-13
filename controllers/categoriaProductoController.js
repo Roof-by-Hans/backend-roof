@@ -8,7 +8,8 @@ const {
 const fetchCategorias = async () => {
   const [rows] = await promisePool.execute(
     `SELECT id_categoria, nombre, id_cat_padre
-     FROM CategoriaProducto`
+     FROM CategoriaProducto
+     WHERE habilitar = 1`
   );
 
   return rows;
@@ -316,9 +317,22 @@ const eliminarCategoria = async (req, res) => {
       });
     }
 
+    // Verificar si la categoría existe y está habilitada
+    const [existe] = await promisePool.execute(
+      `SELECT id_categoria FROM CategoriaProducto WHERE id_categoria = ? AND habilitar = 1`,
+      [id]
+    );
+
+    if (existe.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Categoría no encontrada",
+      });
+    }
+
+    // Borrado lógico: marcar como deshabilitada
     const [result] = await promisePool.execute(
-      `DELETE FROM CategoriaProducto
-       WHERE id_categoria = ?`,
+      `UPDATE CategoriaProducto SET habilitar = 0 WHERE id_categoria = ?`,
       [id]
     );
 
@@ -331,7 +345,7 @@ const eliminarCategoria = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Categoría eliminada correctamente",
+      message: "Categoría deshabilitada correctamente",
       data: { id },
     });
   } catch (error) {

@@ -64,6 +64,14 @@ const obtenerMesaConGrupo = async (idMesa) => {
   return mapMesaConGrupoRows(rows)[0];
 };
 
+const tieneFacturasPendientes = async (idMesa) => {
+  const [rows] = await promisePool.execute(
+    "SELECT id_factura FROM Factura WHERE id_mesa = ? AND estado = 'PENDIENTE' LIMIT 1",
+    [idMesa]
+  );
+  return rows.length > 0;
+};
+
 const listarMesas = async (req, res) => {
   try {
     const [rows] = await promisePool.execute(
@@ -292,6 +300,18 @@ const cambiarEstadoMesa = async (req, res) => {
     // Si el estado es DISPONIBLE, limpiar el cliente
     const idClienteActual = estado === "OCUPADA" ? idCliente || null : null;
 
+    // Validar facturas pendientes si se intenta liberar la mesa
+    if (estado === "DISPONIBLE") {
+      const tienePendientes = await tieneFacturasPendientes(idMesa);
+      if (tienePendientes) {
+        return respondError(
+          res,
+          409,
+          "No se puede liberar la mesa porque tiene facturas pendientes de pago"
+        );
+      }
+    }
+
     const [result] = await promisePool.execute(
       `UPDATE Mesa
           SET estado = ?,
@@ -397,6 +417,16 @@ const liberarMesa = async (req, res) => {
 
     if (!mesaExistente) {
       return respondError(res, 404, "Mesa no encontrada");
+    }
+
+    // Validar facturas pendientes
+    const tienePendientes = await tieneFacturasPendientes(idMesa);
+    if (tienePendientes) {
+      return respondError(
+        res,
+        409,
+        "No se puede liberar la mesa porque tiene facturas pendientes de pago"
+      );
     }
 
     const [result] = await promisePool.execute(
