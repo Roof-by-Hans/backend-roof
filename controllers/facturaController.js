@@ -357,6 +357,15 @@ const updateEstadoFactura = asyncHandler(async (req, res) => {
     });
   }
 
+  // Las facturas COBRADAS solo pueden revertirse mediante el endpoint de rollback
+  if (facturaCheck[0].estado === "COBRADA") {
+    return res.status(409).json({
+      success: false,
+      message:
+        "No se puede cambiar el estado de una factura COBRADA directamente. Use POST /api/transacciones/revertir/:id para realizar un rollback.",
+    });
+  }
+
   // Actualizar el estado
   await promisePool.execute(
     `UPDATE Factura SET estado = ? WHERE id_factura = ?`,

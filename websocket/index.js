@@ -16,7 +16,7 @@ const pedidosEmitter = require('./emitters/pedidosEmitter');
 module.exports = {
   // Mesas
   ...mesasEmitter,
-  
+
   // Pedidos
   ...pedidosEmitter,
   
