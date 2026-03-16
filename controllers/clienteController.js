@@ -27,9 +27,16 @@ const getClientes = async (req, res) => {
         c.id_tarjeta,
         c.foto_perfil,
         c.preferencias,
-        t.uuid AS tarjeta_uuid
+        t.uuid AS tarjeta_uuid,
+        t.saldo_actual,
+        ts.nombre AS tipo_suscripcion,
+        ns.nombre AS nivel_suscripcion,
+        ns.limite_credito
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
+       LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
+       LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
+       WHERE c.habilitar = 1
        ORDER BY c.id_cliente`
     );
 
@@ -72,10 +79,16 @@ const getClientePorId = async (req, res) => {
         c.id_tarjeta,
         c.foto_perfil,
         c.preferencias,
-        t.uuid AS tarjeta_uuid
+        t.uuid AS tarjeta_uuid,
+        t.saldo_actual,
+        ts.nombre AS tipo_suscripcion,
+        ns.nombre AS nivel_suscripcion,
+        ns.limite_credito
        FROM Cliente c
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
-       WHERE c.id_cliente = ?`,
+       LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
+       LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
+       WHERE c.id_cliente = ? AND c.habilitar = 1`,
       [id]
     );
 
@@ -175,24 +188,73 @@ const crearCliente = async (req, res) => {
       });
     }
 
-    // Verificar si el email ya existe
+    // Verificar si el email ya existe (habilitado o no)
     const [emailExistente] = await promisePool.execute(
       "SELECT id_cliente FROM Cliente WHERE email = ?",
       [email]
     );
 
     if (emailExistente.length > 0) {
-      await eliminarImagenSubida();
-      return res.status(409).json({
-        success: false,
-        message: "El email ya está registrado",
+      // Verificar si está habilitado
+      const [habilitado] = await promisePool.execute(
+        "SELECT id_cliente FROM Cliente WHERE email = ? AND habilitar = 1",
+        [email]
+      );
+      
+      if (habilitado.length > 0) {
+        await eliminarImagenSubida();
+        return res.status(409).json({
+          success: false,
+          message: "El email ya está registrado",
+        });
+      }
+      
+      // Si existe pero deshabilitado, reactivas y actualizas
+      const hashedPassword = await hashPassword(contrasena);
+      
+      await promisePool.execute(
+        `UPDATE Cliente 
+         SET nombre = ?, apellido = ?, telefono = ?, contrasena = ?, 
+             id_tarjeta = ?, foto_perfil = ?, preferencias = ?, habilitar = 1 
+         WHERE email = ?`,
+        [
+          nombre,
+          apellido,
+          telefono || null,
+          hashedPassword,
+          idTarjeta || null,
+          fotoPerfil || null,
+          preferencias || null,
+          email
+        ]
+      );
+      
+      const [clienteReactivado] = await promisePool.execute(
+        `SELECT c.id_cliente, c.nombre, c.apellido, c.telefono, c.email, 
+                c.id_tarjeta, c.foto_perfil, c.preferencias,
+                t.uuid AS tarjeta_uuid
+         FROM Cliente c
+         LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
+         WHERE c.email = ?`,
+        [email]
+      );
+      
+      const nuevoCliente = mapClienteRow(clienteReactivado[0]);
+      if (nuevoCliente.fotoPerfil) {
+        nuevoCliente.fotoPerfilUrl = getFileUrl(req, nuevoCliente.fotoPerfil, "clientes");
+      }
+      
+      return res.status(201).json({
+        success: true,
+        data: nuevoCliente,
+        message: "Cliente reactivado correctamente",
       });
     }
 
-    // Si se proporciona idTarjeta, verificar que existe
+    // Si se proporciona idTarjeta, verificar que existe y está habilitada
     if (idTarjeta) {
       const [tarjeta] = await promisePool.execute(
-        "SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ?",
+        "SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ? AND habilitar = 1",
         [idTarjeta]
       );
 
@@ -200,7 +262,7 @@ const crearCliente = async (req, res) => {
         await eliminarImagenSubida();
         return res.status(404).json({
           success: false,
-          message: "La tarjeta especificada no existe",
+          message: "La tarjeta especificada no existe o está deshabilitada",
         });
       }
     }
@@ -208,8 +270,8 @@ const crearCliente = async (req, res) => {
     const hashedPassword = await hashPassword(contrasena);
 
     const [result] = await promisePool.execute(
-      `INSERT INTO Cliente (nombre, apellido, telefono, email, contrasena, id_tarjeta, foto_perfil, preferencias)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO Cliente (nombre, apellido, telefono, email, contrasena, id_tarjeta, foto_perfil, preferencias, habilitar)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
       [
         nombre,
         apellido,
@@ -294,7 +356,7 @@ const actualizarCliente = async (req, res) => {
 
     // Obtener el cliente existente para manejar la imagen anterior
     const [clienteExistente] = await promisePool.execute(
-      "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+      "SELECT foto_perfil FROM Cliente WHERE id_cliente = ? AND habilitar = 1",
       [id]
     );
 
@@ -373,9 +435,9 @@ const actualizarCliente = async (req, res) => {
         });
       }
 
-      // Verificar si el email ya existe en otro cliente
+      // Verificar si el email ya existe en otro cliente (habilitado)
       const [emailExistente] = await promisePool.execute(
-        "SELECT id_cliente FROM Cliente WHERE email = ? AND id_cliente != ?",
+        "SELECT id_cliente FROM Cliente WHERE email = ? AND id_cliente != ? AND habilitar = 1",
         [email, id]
       );
 
@@ -400,7 +462,7 @@ const actualizarCliente = async (req, res) => {
     if (idTarjeta !== undefined) {
       if (idTarjeta !== null) {
         const [tarjeta] = await promisePool.execute(
-          "SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ?",
+          "SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ? AND habilitar = 1",
           [idTarjeta]
         );
 
@@ -408,7 +470,7 @@ const actualizarCliente = async (req, res) => {
           await eliminarImagenSubida();
           return res.status(404).json({
             success: false,
-            message: "La tarjeta especificada no existe",
+            message: "La tarjeta especificada no existe o está deshabilitada",
           });
         }
       }
@@ -638,27 +700,29 @@ const desvincularTarjetaCliente = async (req, res) => {
 };
 
 /**
- * Eliminar un cliente
+ * Eliminar un cliente (borrado lógico)
  */
 const eliminarCliente = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Obtener la imagen del cliente antes de eliminarlo
-    const [clienteAEliminar] = await promisePool.execute(
-      "SELECT foto_perfil FROM Cliente WHERE id_cliente = ?",
+    // Verificar que el cliente existe y está habilitado
+    const [clienteExiste] = await promisePool.execute(
+      "SELECT id_cliente FROM Cliente WHERE id_cliente = ? AND habilitar = 1",
       [id]
     );
 
-    if (clienteAEliminar.length === 0) {
+    if (clienteExiste.length === 0) {
       return res.status(404).json({
         success: false,
         message: "Cliente no encontrado",
       });
     }
 
+    // Borrado lógico
+    // NO eliminamos la imagen del servidor - se conserva por si el cliente se reactiva
     const [result] = await promisePool.execute(
-      "DELETE FROM Cliente WHERE id_cliente = ?",
+      "UPDATE Cliente SET habilitar = 0 WHERE id_cliente = ?",
       [id]
     );
 
@@ -669,33 +733,12 @@ const eliminarCliente = async (req, res) => {
       });
     }
 
-    // Eliminar la imagen asociada si existe
-    if (clienteAEliminar[0].foto_perfil) {
-      const rutaImagen = path.join(
-        __dirname,
-        "..",
-        "uploads",
-        "clientes",
-        clienteAEliminar[0].foto_perfil
-      );
-      await deleteFile(rutaImagen);
-    }
-
     res.json({
       success: true,
-      message: "Cliente eliminado correctamente",
+      message: "Cliente deshabilitado correctamente",
     });
   } catch (error) {
     console.error("Error al eliminar cliente:", error);
-
-    // Si hay restricciones de clave foránea
-    if (error.code === "ER_ROW_IS_REFERENCED_2") {
-      return res.status(409).json({
-        success: false,
-        message:
-          "No se puede eliminar el cliente porque tiene registros relacionados",
-      });
-    }
 
     res.status(500).json({
       success: false,

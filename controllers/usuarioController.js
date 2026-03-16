@@ -41,6 +41,7 @@ const getUsuarios = async (req, res) => {
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
+       WHERE u.activo = 1
        GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`
     );
 
@@ -73,7 +74,7 @@ const getUsuarioPorId = async (req, res) => {
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
-       WHERE u.id_usuario = ?
+       WHERE u.id_usuario = ? AND u.activo = 1
        GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`,
       [id]
     );
@@ -319,9 +320,9 @@ const eliminarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Obtener la imagen del usuario antes de eliminarlo
+    // Verificar que el usuario existe y está activo
     const [usuarioAEliminar] = await promisePool.execute(
-      "SELECT foto_perfil FROM Usuario WHERE id_usuario = ?",
+      "SELECT foto_perfil FROM Usuario WHERE id_usuario = ? AND activo = 1",
       [id]
     );
 
@@ -329,34 +330,19 @@ const eliminarUsuario = async (req, res) => {
       return enviarError(res, 404, "Usuario no encontrado");
     }
 
-    // Eliminar primero los roles del usuario (foreign key constraint)
+    // Borrado lógico: marcar como inactivo
+    // NO eliminamos la imagen del servidor - se conserva por si el usuario se reactiva
+    await promisePool.execute(
+      "UPDATE Usuario SET activo = 0 WHERE id_usuario = ?",
+      [id]
+    );
+
+    // Eliminar los roles del usuario
     await promisePool.execute("DELETE FROM UsuarioRol WHERE id_usuario = ?", [
       id,
     ]);
 
-    // Ahora eliminar el usuario
-    const [result] = await promisePool.execute(
-      "DELETE FROM Usuario WHERE id_usuario = ?",
-      [id]
-    );
-
-    if (result.affectedRows === 0) {
-      return enviarError(res, 404, "Usuario no encontrado");
-    }
-
-    // Eliminar la imagen asociada si existe
-    if (usuarioAEliminar[0].foto_perfil) {
-      const rutaImagen = path.join(
-        __dirname,
-        "..",
-        "uploads",
-        "usuarios",
-        usuarioAEliminar[0].foto_perfil
-      );
-      await deleteFile(rutaImagen);
-    }
-
-    return enviarExito(res, null, "Usuario eliminado correctamente");
+    return enviarExito(res, null, "Usuario deshabilitado correctamente");
   } catch (error) {
     console.error("Error al eliminar usuario:", error);
     return enviarError(res, 500, "Error interno del servidor", {
