@@ -5,6 +5,7 @@ const {
   getUsuarioPorId,
   crearUsuario,
   actualizarUsuario,
+  actualizarMiEmail,
   eliminarUsuario,
   asignarRolUsuario,
   removerRolesUsuario,
@@ -753,6 +754,7 @@ router.delete("/:id/roles", authenticate, authorizeAdmin, removerRolesUsuario);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.put("/:id", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), handleMulterError, actualizarUsuario);
+router.put("/me/email", authenticate, actualizarMiEmail);
 
 /**
  * @swagger
