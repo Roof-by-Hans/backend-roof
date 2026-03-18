@@ -110,7 +110,9 @@ const olvidarContrasena = asyncHandler(async (req, res) => {
 
   // Enviar email con link
   try {
-    await enviarMailRecuperacion(email, token);
+    await enviarMailRecuperacion(email, token, {
+      baseUrl: process.env.FRONTEND_URL_USUARIO || process.env.FRONTEND_URL,
+    });
     console.log(`✓ Email de recuperación enviado a ${email} para usuario ${nombreUsuario}`);
   } catch (errorMail) {
     console.error(`✗ Error al enviar email: ${errorMail.message}`);

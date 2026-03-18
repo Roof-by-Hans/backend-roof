@@ -1,5 +1,10 @@
 const express = require("express");
-const { loginCliente, registrarCliente } = require("../controllers/authClienteController");
+const {
+	loginCliente,
+	registrarCliente,
+	olvidarContrasenaCliente,
+	restablecerContrasenaCliente,
+} = require("../controllers/authClienteController");
 
 const router = express.Router();
 
@@ -257,5 +262,70 @@ router.post("/login", loginCliente);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.post("/registro", registrarCliente);
+
+/**
+ * @swagger
+ * /api/auth-cliente/forgot-password:
+ *   post:
+ *     summary: Solicitar recuperación de contraseña para cliente
+ *     description: Si el email existe, envía un enlace de recuperación. La respuesta es genérica por seguridad.
+ *     tags: [Autenticación Clientes]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: cliente@example.com
+ *     responses:
+ *       200:
+ *         description: Solicitud procesada
+ *       400:
+ *         $ref: '#/components/responses/BadRequestError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.post("/forgot-password", olvidarContrasenaCliente);
+
+/**
+ * @swagger
+ * /api/auth-cliente/reset-password:
+ *   post:
+ *     summary: Restablecer contraseña de cliente con token
+ *     description: Cambia la contraseña si el token es válido y no está expirado.
+ *     tags: [Autenticación Clientes]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - token
+ *               - contrasenaNueva
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: Token recibido por email
+ *               contrasenaNueva:
+ *                 type: string
+ *                 description: Nueva contraseña (mínimo 6 caracteres)
+ *     responses:
+ *       200:
+ *         description: Contraseña restablecida correctamente
+ *       400:
+ *         description: Datos inválidos
+ *       401:
+ *         description: Token inválido o expirado
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.post("/reset-password", restablecerContrasenaCliente);
 
 module.exports = router;

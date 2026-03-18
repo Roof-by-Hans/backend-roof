@@ -2,6 +2,11 @@ const bcrypt = require("bcrypt");
 const { promisePool } = require("../config/database");
 const { generateToken } = require("../helpers/jwt");
 const asyncHandler = require("../helpers/asyncHandler");
+const {
+  hashToken,
+  generarToken,
+  enviarMailRecuperacion,
+} = require("../helpers/mailer");
 
 const loginCliente = asyncHandler(async (req, res) => {
   const { email, contrasena } = req.body;
@@ -124,7 +129,96 @@ const registrarCliente = asyncHandler(async (req, res) => {
   });
 });
 
+const olvidarContrasenaCliente = asyncHandler(async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      message: "El email es requerido",
+    });
+  }
+
+  const [rows] = await promisePool.execute(
+    "SELECT id_cliente, email FROM Cliente WHERE email = ? AND habilitar = 1",
+    [email]
+  );
+
+  if (rows.length > 0) {
+    const cliente = rows[0];
+    const token = generarToken();
+    const tokenHash = hashToken(token);
+    const expiracion = new Date(Date.now() + 15 * 60 * 1000);
+
+    await promisePool.execute(
+      "UPDATE Cliente SET reset_token_hash = ?, reset_token_expires_at = ? WHERE id_cliente = ?",
+      [tokenHash, expiracion, cliente.id_cliente]
+    );
+
+    try {
+      await enviarMailRecuperacion(cliente.email, token, {
+        baseUrl: process.env.FRONTEND_URL_CLIENTE || process.env.FRONTEND_URL,
+      });
+      console.log(`✓ Email de recuperación enviado a ${cliente.email}`);
+    } catch (errorMail) {
+      console.error(`✗ Error al enviar email de recuperación: ${errorMail.message}`);
+    }
+  }
+
+  return res.json({
+    success: true,
+    message: "Si el email existe, recibirás un enlace para restablecer tu contraseña.",
+  });
+});
+
+const restablecerContrasenaCliente = asyncHandler(async (req, res) => {
+  const { token, contrasenaNueva } = req.body;
+
+  if (!token || !contrasenaNueva) {
+    return res.status(400).json({
+      success: false,
+      message: "Token y contraseña nueva son requeridos",
+    });
+  }
+
+  if (contrasenaNueva.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: "La contraseña debe tener al menos 6 caracteres",
+    });
+  }
+
+  const tokenHash = hashToken(token);
+
+  const [rows] = await promisePool.execute(
+    "SELECT id_cliente FROM Cliente WHERE reset_token_hash = ? AND reset_token_expires_at > NOW()",
+    [tokenHash]
+  );
+
+  if (rows.length === 0) {
+    return res.status(401).json({
+      success: false,
+      message: "Token inválido o expirado",
+    });
+  }
+
+  const saltRounds = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
+  const contrasenaNuevaHash = await bcrypt.hash(contrasenaNueva, saltRounds);
+
+  await promisePool.execute(
+    "UPDATE Cliente SET contrasena = ?, reset_token_hash = NULL, reset_token_expires_at = NULL WHERE id_cliente = ?",
+    [contrasenaNuevaHash, rows[0].id_cliente]
+  );
+
+  return res.json({
+    success: true,
+    message: "Contraseña restablecida correctamente. Ya puedes iniciar sesión",
+  });
+});
+
 module.exports = {
   loginCliente,
   registrarCliente,
+  olvidarContrasenaCliente,
+  restablecerContrasenaCliente,
 };
