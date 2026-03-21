@@ -91,8 +91,8 @@ const getUsuarios = async (req, res) => {
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
-       WHERE u.activo = 1
-       GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil`
+       GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil
+       ORDER BY u.activo DESC, u.nombre_usuario ASC`
     );
 
     // Agregar URL completa de las imágenes de perfil
@@ -705,6 +705,38 @@ const asignarRolUsuario = async (req, res) => {
   }
 };
 
+const toggleUsuario = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar que el usuario existe
+    const [usuarios] = await promisePool.execute(
+      "SELECT id_usuario, activo FROM Usuario WHERE id_usuario = ?",
+      [id]
+    );
+
+    if (usuarios.length === 0) {
+      return enviarError(res, 404, "Usuario no encontrado");
+    }
+
+    // Toggle: cambiar activo de 1 a 0 o de 0 a 1
+    const nuevoEstado = usuarios[0].activo === 1 ? 0 : 1;
+
+    await promisePool.execute(
+      "UPDATE Usuario SET activo = ? WHERE id_usuario = ?",
+      [nuevoEstado, id]
+    );
+
+    return enviarExito(res, { id: Number(id), activo: nuevoEstado }, 
+      nuevoEstado === 1 ? "Usuario habilitado correctamente" : "Usuario deshabilitado correctamente");
+  } catch (error) {
+    console.error("Error al toggle usuario:", error);
+    return enviarError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  }
+};
+
 const removerRolesUsuario = async (req, res) => {
   try {
     const { id } = req.params;
@@ -870,6 +902,7 @@ module.exports = {
   actualizarUsuario,
   actualizarMiEmail,
   eliminarUsuario,
+  toggleUsuario,
   asignarRolUsuario,
   removerRolesUsuario,
 };

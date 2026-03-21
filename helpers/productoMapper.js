@@ -23,6 +23,7 @@ const mapProductoRow = (row = {}) => {
     idCategoria,
     fotoPrincipal: row.foto_principal ?? row.fotoPrincipal ?? null,
     descripcion: row.descripcion ?? null,
+    habilitar: row.habilitar ?? 1,
     categoria:
       nombreCategoria !== null && nombreCategoria !== undefined
         ? {

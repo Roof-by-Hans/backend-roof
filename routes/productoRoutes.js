@@ -1,10 +1,12 @@
 const express = require("express");
 const {
   getProductos,
+  getProductosHabilitados,
   getProductoPorId,
   crearProducto,
   actualizarProducto,
   eliminarProducto,
+  toggleProducto,
 } = require("../controllers/productoController");
 const { authenticate } = require("../middlewares/authMiddleware");
 const { uploadProduct, handleMulterError } = require("../config/multer");
@@ -192,6 +194,40 @@ router.get("/", authenticate, getProductos);
 
 /**
  * @swagger
+ * /api/productos/habilitados:
+ *   get:
+ *     summary: Listar productos habilitados para pedidos
+ *     description: Retorna solo productos con habilitar=1, útil para crear pedidos donde no deben aparecer productos deshabilitados
+ *     tags: [Productos]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Listado de productos habilitados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Productos habilitados obtenidos correctamente
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/Producto'
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get("/habilitados", authenticate, getProductosHabilitados);
+
+/**
+ * @swagger
  * /api/productos/{id}:
  *   get:
  *     summary: Obtener un producto por su identificador
@@ -358,6 +394,49 @@ router.post("/", authenticate, uploadProduct.single('imagen'), handleMulterError
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.put("/:id", authenticate, uploadProduct.single('imagen'), handleMulterError, actualizarProducto);
+
+/**
+ * @swagger
+ * /api/productos/{id}/toggle:
+ *   patch:
+ *     summary: Toggle el estado de habilitación de un producto
+ *     description: Cambia el estado de habilitación de un producto de habilitado a deshabilitado o viceversa.
+ *     tags: [Productos]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/ProductoId'
+ *     responses:
+ *       200:
+ *         description: Estado toggled correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Producto deshabilitado correctamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 101
+ *                     habilitar:
+ *                       type: integer
+ *                       example: 0
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/:id/toggle", authenticate, toggleProducto);
 
 /**
  * @swagger

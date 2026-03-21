@@ -7,6 +7,7 @@ const {
   actualizarUsuario,
   actualizarMiEmail,
   eliminarUsuario,
+  toggleUsuario,
   asignarRolUsuario,
   removerRolesUsuario,
 } = require("../controllers/usuarioController");
@@ -755,6 +756,56 @@ router.delete("/:id/roles", authenticate, authorizeAdmin, removerRolesUsuario);
  */
 router.put("/:id", authenticate, authorizeAdmin, uploadUser.single('fotoPerfil'), handleMulterError, actualizarUsuario);
 router.put("/me/email", authenticate, actualizarMiEmail);
+
+/**
+ * @swagger
+ * /api/usuarios/{id}/toggle:
+ *   patch:
+ *     summary: Toggle el estado activo de un usuario
+ *     description: Cambia el estado activo de un usuario de habilitado a deshabilitado o viceversa.
+ *     tags: [Usuarios]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: Identificador del usuario a togglear
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Estado toggled correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Usuario deshabilitado correctamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 1
+ *                     activo:
+ *                       type: integer
+ *                       example: 0
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       403:
+ *         $ref: '#/components/responses/ForbiddenError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/:id/toggle", authenticate, authorizeAdmin, toggleUsuario);
 
 /**
  * @swagger
