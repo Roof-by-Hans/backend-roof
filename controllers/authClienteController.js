@@ -33,6 +33,15 @@ const loginCliente = asyncHandler(async (req, res) => {
   }
 
   const cliente = rows[0];
+
+  // Guard: NULL contrasena → return 401 (same message as wrong password, no info leakage)
+  if (!cliente.contrasena) {
+    return res.status(401).json({
+      success: false,
+      message: "Credenciales inválidas",
+    });
+  }
+
   const passwordMatch = await bcrypt.compare(contrasena, cliente.contrasena);
 
   if (!passwordMatch) {
