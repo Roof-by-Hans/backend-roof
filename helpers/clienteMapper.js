@@ -23,6 +23,7 @@ const mapClienteRow = (row) => {
     fotoPerfil: row.foto_perfil || null,
     fotoPerfilUrl: fotoPerfilUrl,
     preferencias: row.preferencias || null,
+    habilitar: row.habilitar ?? 1,
     // Si hay información de tarjeta relacionada
     ...(row.tarjeta_uuid && {
       tarjeta: {

@@ -75,11 +75,11 @@ const getProductos = async (req, res) => {
               p.id_categoria,
               p.foto_principal,
               p.descripcion,
+              p.habilitar,
               c.nombre AS nombre_categoria
-         FROM Producto p
-         INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
-         WHERE p.habilitar = 1
-         ORDER BY p.nombre`
+       FROM Producto p
+       INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
+       ORDER BY p.habilitar DESC, p.nombre ASC`
     );
 
     // Agregar URL completa de las imágenes
@@ -102,6 +102,55 @@ const getProductos = async (req, res) => {
     });
   } catch (error) {
     console.error("Error al obtener productos:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Obtener solo productos habilitados para pedidos
+ * GET /api/productos/habilitados
+ */
+const getProductosHabilitados = async (req, res) => {
+  try {
+    const [rows] = await promisePool.execute(
+      `SELECT p.id_producto,
+              p.nombre,
+              p.precio_unitario,
+              p.id_categoria,
+              p.foto_principal,
+              p.descripcion,
+              p.habilitar,
+              c.nombre AS nombre_categoria
+       FROM Producto p
+       INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
+       WHERE p.habilitar = 1 AND c.habilitar = 1
+       ORDER BY c.nombre ASC, p.nombre ASC`
+    );
+
+    // Agregar URL completa de las imágenes
+    const productosConImagenes = rows.map((row) => {
+      const producto = mapProductoRow(row);
+      if (producto.fotoPrincipal) {
+        producto.fotoPrincipalUrl = getFileUrl(
+          req,
+          producto.fotoPrincipal,
+          "productos"
+        );
+      }
+      return producto;
+    });
+
+    res.json({
+      success: true,
+      message: "Productos habilitados obtenidos correctamente",
+      data: productosConImagenes,
+    });
+  } catch (error) {
+    console.error("Error al obtener productos habilitados:", error);
     res.status(500).json({
       success: false,
       message: "Error interno del servidor",
@@ -554,10 +603,59 @@ const eliminarProducto = async (req, res) => {
   }
 };
 
+const toggleProducto = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (Number.isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "El identificador del producto no es válido",
+      });
+    }
+
+    // Verificar que el producto existe
+    const [productoActual] = await promisePool.execute(
+      `SELECT id_producto, nombre, habilitar FROM Producto WHERE id_producto = ?`,
+      [id]
+    );
+
+    if (productoActual.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Producto no encontrado",
+      });
+    }
+
+    // Toggle: cambiar habilitar de 1 a 0 o de 0 a 1
+    const nuevoEstado = productoActual[0].habilitar === 1 ? 0 : 1;
+    
+    await promisePool.execute(
+      `UPDATE Producto SET habilitar = ? WHERE id_producto = ?`,
+      [nuevoEstado, id]
+    );
+
+    res.json({
+      success: true,
+      message: nuevoEstado === 1 ? "Producto habilitado correctamente" : "Producto deshabilitado correctamente",
+      data: { id, habilitar: nuevoEstado },
+    });
+  } catch (error) {
+    console.error("Error al toggle producto:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getProductos,
+  getProductosHabilitados,
   getProductoPorId,
   crearProducto,
   actualizarProducto,
   eliminarProducto,
+  toggleProducto,
 };

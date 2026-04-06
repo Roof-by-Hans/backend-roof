@@ -42,7 +42,7 @@ const registrarConsumo = async (req, res) => {
         throw error;
       }
 
-      // 1. Verificar que el cliente existe y obtener información de su tarjeta
+      // 1. Verificar que el cliente existe, está habilitado y obtener información de su tarjeta
       const [clienteRows] = await connection.execute(
         `SELECT c.id_cliente, c.nombre, c.apellido, c.email,
               t.id_tarjeta, t.id_tipo_suscripcion, t.saldo_actual,
@@ -52,12 +52,12 @@ const registrarConsumo = async (req, res) => {
        LEFT JOIN Tarjeta t ON c.id_tarjeta = t.id_tarjeta
        LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
        LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
-       WHERE c.id_cliente = ?`,
+       WHERE c.id_cliente = ? AND c.habilitar = 1`,
         [idCliente]
       );
 
       if (clienteRows.length === 0) {
-        const error = new Error(`No existe un cliente con ID ${idCliente}`);
+        const error = new Error(`No existe un cliente habilitado con ID ${idCliente}`);
         error.statusCode = 404;
         throw error;
       }
@@ -114,13 +114,13 @@ const registrarConsumo = async (req, res) => {
         const [productoRows] = await connection.execute(
           `SELECT id_producto, nombre, precio_unitario 
          FROM Producto 
-         WHERE id_producto = ?`,
+         WHERE id_producto = ? AND habilitar = 1`,
           [item.idProducto]
         );
 
         if (productoRows.length === 0) {
           const error = new Error(
-            `No existe el producto con ID ${item.idProducto}`
+            `El producto con ID ${item.idProducto} no existe o está deshabilitado`
           );
           error.statusCode = 404;
           throw error;

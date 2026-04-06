@@ -7,6 +7,7 @@ const {
   actualizarCliente,
   eliminarCliente,
   desvincularTarjetaCliente,
+  toggleCliente,
 } = require("../controllers/clienteController");
 const {
   authenticate,
@@ -598,6 +599,54 @@ router.patch(
        500:
          $ref: '#/components/responses/InternalServerError'
  */
-router.delete("/:id", authenticate, authorizeAdmin, eliminarCliente);
+  router.delete("/:id", authenticate, authorizeAdmin, eliminarCliente);
+
+/**
+ * @swagger
+ * /api/clientes/{id}/toggle:
+ *   patch:
+ *     summary: Toggle el estado de habilitación de un cliente
+ *     description: Cambia el estado de habilitación de un cliente de habilitado a deshabilitado o viceversa.
+ *     tags: [Clientes]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID del cliente
+ *     responses:
+ *       200:
+ *         description: Estado toggled correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Cliente deshabilitado correctamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 1
+ *                     habilitar:
+ *                       type: integer
+ *                       example: 0
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/:id/toggle", authenticate, authorizeAdmin, toggleCliente);
 
 module.exports = router;

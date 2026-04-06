@@ -5,6 +5,7 @@ const {
   crearCategoria,
   actualizarCategoria,
   eliminarCategoria,
+  toggleCategoria,
 } = require("../controllers/categoriaProductoController");
 const { authenticate } = require("../middlewares/authMiddleware");
 
@@ -243,6 +244,49 @@ router.post("/", authenticate, crearCategoria);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.put("/:id", authenticate, actualizarCategoria);
+
+/**
+ * @swagger
+ * /api/categorias-producto/{id}/toggle:
+ *   patch:
+ *     summary: Toggle el estado de habilitación de una categoría
+ *     description: Cambia el estado de habilitación de una categoría de habilitado a deshabilitado o viceversa.
+ *     tags: [CategoriasProducto]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/CategoriaProductoId'
+ *     responses:
+ *       200:
+ *         description: Estado toggled correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Categoría deshabilitada correctamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 5
+ *                     habilitar:
+ *                       type: integer
+ *                       example: 0
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/:id/toggle", authenticate, toggleCategoria);
 
 /**
  * @swagger

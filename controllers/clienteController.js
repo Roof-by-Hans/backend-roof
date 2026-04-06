@@ -27,6 +27,7 @@ const getClientes = async (req, res) => {
         c.id_tarjeta,
         c.foto_perfil,
         c.preferencias,
+        c.habilitar,
         t.uuid AS tarjeta_uuid,
         t.saldo_actual,
         ts.nombre AS tipo_suscripcion,
@@ -36,8 +37,7 @@ const getClientes = async (req, res) => {
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
        LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
        LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
-       WHERE c.habilitar = 1
-       ORDER BY c.id_cliente`
+       ORDER BY c.habilitar DESC, c.id_cliente`
     );
 
     // Agregar URL completa de las imágenes de perfil
@@ -748,6 +748,50 @@ const eliminarCliente = async (req, res) => {
   }
 };
 
+/**
+ * Toggle el estado de habilitación de un cliente
+ */
+const toggleCliente = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar que el cliente existe
+    const [clienteExiste] = await promisePool.execute(
+      "SELECT id_cliente, nombre, apellido, habilitar FROM Cliente WHERE id_cliente = ?",
+      [id]
+    );
+
+    if (clienteExiste.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Cliente no encontrado",
+      });
+    }
+
+    // Toggle: cambiar habilitar de 1 a 0 o de 0 a 1
+    const nuevoEstado = clienteExiste[0].habilitar === 1 ? 0 : 1;
+
+    await promisePool.execute(
+      "UPDATE Cliente SET habilitar = ? WHERE id_cliente = ?",
+      [nuevoEstado, id]
+    );
+
+    res.json({
+      success: true,
+      message: nuevoEstado === 1 ? "Cliente habilitado correctamente" : "Cliente deshabilitado correctamente",
+      data: { id: parseInt(id), habilitar: nuevoEstado },
+    });
+  } catch (error) {
+    console.error("Error al toggle cliente:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getClientes,
   getClientePorId,
@@ -755,4 +799,5 @@ module.exports = {
   actualizarCliente,
   eliminarCliente,
   desvincularTarjetaCliente,
+  toggleCliente,
 };
