@@ -315,7 +315,7 @@ router.delete("/foto", authClienteMiddleware, eliminarFoto);
  * /api/auth-cliente/resumen:
  *   get:
  *     summary: Obtener resumen de cuenta del cliente
- *     description: Retorna el saldo actual, límite de crédito, total de movimientos y totales agrupados por tipo
+ *     description: Retorna el saldo actual y, para clientes CREDITO, informacion de limite mensual
  *     tags: [Cliente Autenticado]
  *     security:
  *       - BearerAuth: []
@@ -334,9 +334,23 @@ router.delete("/foto", authClienteMiddleware, eliminarFoto);
  *                   properties:
  *                     saldoActual:
  *                       type: number
+ *                     totalConsumos:
+ *                       type: number
+ *                       example: 12500
+ *                     totalPagos:
+ *                       type: number
+ *                       example: 5000
+ *                     ultimoMovimiento:
+ *                       type: string
+ *                       format: date-time
+ *                       nullable: true
  *                     estadoTarjeta:
  *                       type: string
  *                       nullable: true
+ *                     tipoSuscripcion:
+ *                       type: string
+ *                       nullable: true
+ *                       example: CREDITO
  *                     totalMovimientos:
  *                       type: integer
  *                     totalesPorTipo:
@@ -350,6 +364,32 @@ router.delete("/foto", authClienteMiddleware, eliminarFoto);
  *                             type: integer
  *                           total:
  *                             type: number
+ *                     limiteTotal:
+ *                       type: number
+ *                       example: 50000
+ *                     consumidoMes:
+ *                       type: number
+ *                       example: 18200
+ *                     limiteRestante:
+ *                       type: number
+ *                       example: 31800
+ *                     periodo:
+ *                       type: object
+ *                       properties:
+ *                         anio:
+ *                           type: integer
+ *                           example: 2026
+ *                         mes:
+ *                           type: integer
+ *                           example: 4
+ *                         inicio:
+ *                           type: string
+ *                           format: date-time
+ *                           example: 2026-04-01T03:00:00.000Z
+ *                         fin:
+ *                           type: string
+ *                           format: date-time
+ *                           example: 2026-05-01T02:59:59.999Z
  *       401:
  *         description: Token no proporcionado o inválido
  */
