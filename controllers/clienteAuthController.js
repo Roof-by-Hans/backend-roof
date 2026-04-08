@@ -83,17 +83,49 @@ const getPerfilCliente = asyncHandler(async (req, res) => {
 const getResumenCuenta = asyncHandler(async (req, res) => {
   const clienteId = req.cliente.id;
 
-  // Obtener saldo actual de la tarjeta del cliente
+  // Obtener datos base de cliente/tarjeta/suscripcion
   const [saldoRows] = await promisePool.execute(
-    `SELECT t.saldo_actual, t.estado 
+    `SELECT c.id_cliente,
+            t.saldo_actual,
+            t.estado,
+            ts.nombre AS tipo_suscripcion,
+            ns.limite_credito
      FROM Cliente c
-     INNER JOIN Tarjeta t ON c.id_tarjeta = t.id_tarjeta
+     LEFT JOIN Tarjeta t ON c.id_tarjeta = t.id_tarjeta
+     LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
+     LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
      WHERE c.id_cliente = ?`,
     [clienteId]
   );
 
-  const saldoActual = saldoRows.length > 0 ? parseFloat(saldoRows[0].saldo_actual) : 0;
-  const estadoTarjeta = saldoRows.length > 0 ? saldoRows[0].estado : null;
+  if (saldoRows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      message: "Cliente no encontrado",
+    });
+  }
+
+  const cliente = saldoRows[0];
+
+  const saldoActual = cliente.saldo_actual ? parseFloat(cliente.saldo_actual) : 0;
+  const estadoTarjeta = cliente.estado || null;
+  const tipoSuscripcion = cliente.tipo_suscripcion || null;
+  const esCredito = tipoSuscripcion === "CREDITO";
+
+  // Corte mensual en America/Argentina/Buenos_Aires (UTC-3)
+  const now = new Date();
+  const argentinaNow = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  const anio = argentinaNow.getUTCFullYear();
+  const mes = argentinaNow.getUTCMonth() + 1;
+
+  const inicioLocalSql = `${anio}-${String(mes).padStart(2, "0")}-01 00:00:00`;
+  const ultimoDiaDelMes = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
+  const finLocalSql = `${anio}-${String(mes).padStart(2, "0")}-${String(
+    ultimoDiaDelMes
+  ).padStart(2, "0")} 23:59:59`;
+
+  const inicioPeriodo = new Date(Date.UTC(anio, mes - 1, 1, 3, 0, 0, 0)).toISOString();
+  const finPeriodo = new Date(Date.UTC(anio, mes, 1, 2, 59, 59, 999)).toISOString();
 
   // Obtener total de movimientos
   const [countRows] = await promisePool.execute(
@@ -117,17 +149,73 @@ const getResumenCuenta = asyncHandler(async (req, res) => {
     [clienteId]
   );
 
+  // Obtener consumos del mes para limite de credito
+  const [consumoMesRows] = await promisePool.execute(
+    `SELECT COALESCE(SUM(mc.monto), 0) AS consumido_mes
+     FROM MovimientoCuenta mc
+     INNER JOIN TipoMovimiento tm ON mc.id_tipo_mov = tm.id_tipo_mov
+     WHERE mc.id_cliente = ?
+       AND tm.nombre = 'CONSUMO'
+       AND mc.fecha >= ?
+       AND mc.fecha <= ?`,
+    [clienteId, inicioLocalSql, finLocalSql]
+  );
+
+  const limiteTotal = esCredito ? parseFloat(cliente.limite_credito || 0) : 0;
+  const consumidoMes = esCredito
+    ? parseFloat(consumoMesRows[0]?.consumido_mes || 0)
+    : 0;
+
+  const limiteRestante = esCredito
+    ? Math.max(limiteTotal - consumidoMes, 0)
+    : 0;
+
+  if (esCredito && consumidoMes > limiteTotal) {
+    console.warn(
+      `Inconsistencia de credito para cliente ${clienteId}: consumidoMes (${consumidoMes}) > limiteTotal (${limiteTotal})`
+    );
+  }
+
+  let totalConsumos = 0;
+  let totalPagos = 0;
+
+  for (const row of totalesRows) {
+    const total = parseFloat(row.total || 0);
+    if (row.tipo === "CONSUMO") totalConsumos = total;
+    if (row.tipo === "PAGO") totalPagos = total;
+  }
+
+  const [ultimoMovimientoRows] = await promisePool.execute(
+    `SELECT MAX(fecha) AS ultimo_movimiento
+     FROM MovimientoCuenta
+     WHERE id_cliente = ?`,
+    [clienteId]
+  );
+
   res.json({
     success: true,
     data: {
       saldoActual,
+      totalConsumos,
+      totalPagos,
+      ultimoMovimiento: ultimoMovimientoRows[0]?.ultimo_movimiento || null,
       estadoTarjeta,
+      tipoSuscripcion,
       totalMovimientos: countRows[0].total,
       totalesPorTipo: totalesRows.map(row => ({
         tipo: row.tipo,
         cantidad: row.cantidad,
-        total: parseFloat(row.total),
+        total: parseFloat(row.total || 0),
       })),
+      limiteTotal,
+      consumidoMes,
+      limiteRestante,
+      periodo: {
+        anio,
+        mes,
+        inicio: inicioPeriodo,
+        fin: finPeriodo,
+      },
     },
   });
 });
