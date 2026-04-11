@@ -15,9 +15,23 @@ const hashPassword = async (password) => {
 
 /**
  * Obtener todos los clientes
+ * @query {string} estado - Filtro por estado: 'habilitados' (default), 'deshabilitados', 'todos'
  */
 const getClientes = async (req, res) => {
   try {
+    const { estado } = req.query;
+
+    // Construir WHERE dinámico según el parámetro estado
+    let whereClause = "";
+    let queryParams = [];
+
+    if (estado === "habilitados") {
+      whereClause = "WHERE c.habilitar = 1";
+    } else if (estado === "deshabilitados") {
+      whereClause = "WHERE c.habilitar = 0";
+    }
+    // Si estado es 'todos' o no se envía parámetro, no se aplica filtro (trae todos)
+
     const [rows] = await promisePool.execute(
       `SELECT c.id_cliente,
         c.nombre,
@@ -37,7 +51,9 @@ const getClientes = async (req, res) => {
        LEFT JOIN Tarjeta t ON t.id_tarjeta = c.id_tarjeta
        LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
        LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
-       ORDER BY c.habilitar DESC, c.id_cliente`
+       ${whereClause}
+       ORDER BY c.habilitar DESC, c.id_cliente`,
+      queryParams
     );
 
     // Agregar URL completa de las imágenes de perfil

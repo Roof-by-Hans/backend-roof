@@ -106,9 +106,20 @@ const router = express.Router();
  * /api/categorias-producto:
  *   get:
  *     summary: Listar todas las categorías
+ *     description: Soporta filtro por estado mediante el parámetro query `estado`.
  *     tags: [CategoriasProducto]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: estado
+ *         required: false
+ *         description: Filtro por estado de habilitación
+ *         schema:
+ *           type: string
+ *           enum: [habilitados, deshabilitados, todos]
+ *           default: todos
+ *         example: habilitados
  *     responses:
  *       200:
  *         description: Listado jerárquico de categorías

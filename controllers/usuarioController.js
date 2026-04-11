@@ -79,8 +79,25 @@ const resolverRoles = async (roles) => {
   return { rolesEncontrados, rolesNoEncontrados };
 };
 
+/**
+ * Obtener todos los usuarios
+ * @query {string} estado - Filtro por estado: 'habilitados' (default), 'deshabilitados', 'todos'
+ */
 const getUsuarios = async (req, res) => {
   try {
+    const { estado } = req.query;
+
+    // Construir WHERE dinámico según el parámetro estado
+    let whereClause = "";
+    let queryParams = [];
+
+    if (estado === "habilitados") {
+      whereClause = "WHERE u.activo = 1";
+    } else if (estado === "deshabilitados") {
+      whereClause = "WHERE u.activo = 0";
+    }
+    // Si estado es 'todos' o no se envía parámetro, no se aplica filtro (trae todos)
+
     const [rows] = await promisePool.execute(
       `SELECT u.id_usuario,
         u.nombre_usuario,
@@ -91,8 +108,10 @@ const getUsuarios = async (req, res) => {
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
+       ${whereClause}
        GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil
-       ORDER BY u.activo DESC, u.nombre_usuario ASC`
+       ORDER BY u.activo DESC, u.nombre_usuario ASC`,
+      queryParams
     );
 
     // Agregar URL completa de las imágenes de perfil

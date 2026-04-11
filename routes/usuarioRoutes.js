@@ -442,10 +442,20 @@ const { uploadUser, handleMulterError } = require("../config/multer");
  * /api/usuarios:
  *   get:
  *     summary: Obtener todos los usuarios
- *     description: Devuelve la lista completa de usuarios con sus roles agregados desde la tabla UsuarioRol.
+ *     description: Devuelve la lista completa de usuarios con sus roles agregados desde la tabla UsuarioRol. Soporta filtro por estado mediante el parámetro query `estado`.
  *     tags: [Usuarios]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: estado
+ *         required: false
+ *         description: Filtro por estado activo
+ *         schema:
+ *           type: string
+ *           enum: [habilitados, deshabilitados, todos]
+ *           default: todos
+ *         example: habilitados
  *     responses:
  *       200:
  *         description: Usuarios obtenidos correctamente

@@ -164,9 +164,20 @@ const router = express.Router();
  * /api/productos:
  *   get:
  *     summary: Listar todos los productos disponibles
+ *     description: Soporta filtro por estado mediante el parámetro query `estado`.
  *     tags: [Productos]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: estado
+ *         required: false
+ *         description: Filtro por estado de habilitación
+ *         schema:
+ *           type: string
+ *           enum: [habilitados, deshabilitados, todos]
+ *           default: todos
+ *         example: habilitados
  *     responses:
  *       200:
  *         description: Listado de productos con su categoría asociada

@@ -66,8 +66,25 @@ const obtenerProductoPorId = async (id) => {
   return rows[0] || null;
 };
 
+/**
+ * Obtener todos los productos
+ * @query {string} estado - Filtro por estado: 'habilitados' (default), 'deshabilitados', 'todos'
+ */
 const getProductos = async (req, res) => {
   try {
+    const { estado } = req.query;
+
+    // Construir WHERE dinámico según el parámetro estado
+    let whereClause = "";
+    let queryParams = [];
+
+    if (estado === "habilitados") {
+      whereClause = "WHERE p.habilitar = 1";
+    } else if (estado === "deshabilitados") {
+      whereClause = "WHERE p.habilitar = 0";
+    }
+    // Si estado es 'todos' o no se envía parámetro, no se aplica filtro (trae todos)
+
     const [rows] = await promisePool.execute(
       `SELECT p.id_producto,
               p.nombre,
@@ -79,7 +96,9 @@ const getProductos = async (req, res) => {
               c.nombre AS nombre_categoria
        FROM Producto p
        INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
-       ORDER BY p.habilitar DESC, p.nombre ASC`
+       ${whereClause}
+       ORDER BY p.habilitar DESC, p.nombre ASC`,
+      queryParams
     );
 
     // Agregar URL completa de las imágenes

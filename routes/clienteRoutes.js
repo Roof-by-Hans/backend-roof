@@ -198,10 +198,20 @@ const { uploadClient, handleMulterError } = require("../config/multer");
  * /api/clientes:
  *   get:
  *     summary: Obtener todos los clientes
- *     description: Devuelve la lista completa de clientes registrados en el sistema con información de tarjeta asociada si existe.
+ *     description: Devuelve la lista completa de clientes registrados en el sistema con información de tarjeta asociada si existe. Soporta filtro por estado mediante el parámetro query `estado`.
  *     tags: [Clientes]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: estado
+ *         required: false
+ *         description: Filtro por estado de habilitación
+ *         schema:
+ *           type: string
+ *           enum: [habilitados, deshabilitados, todos]
+ *           default: todos
+ *         example: habilitados
  *     responses:
  *       200:
  *         description: Clientes obtenidos correctamente

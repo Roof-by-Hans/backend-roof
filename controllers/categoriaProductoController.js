@@ -44,16 +44,31 @@ const parseParentId = (valor) => {
   return numero;
 };
 
+/**
+ * Obtener todas las categorías
+ * @query {string} estado - Filtro por estado: 'habilitados' (default), 'deshabilitados', 'todos'
+ */
 const getCategorias = async (req, res) => {
   try {
+    const { estado } = req.query;
+
     // Obtener todas las categorías con su estado de habilitación
     const todasLasCategorias = await fetchAllCategorias();
-    
-    // Construir el árbol solo con las habilitadas (para mostrar la jerarquía)
+
+    // Filtrar según el parámetro estado
+    let categoriasFiltradas = todasLasCategorias;
+    if (estado === "habilitados") {
+      categoriasFiltradas = todasLasCategorias.filter(c => c.habilitar === 1);
+    } else if (estado === "deshabilitados") {
+      categoriasFiltradas = todasLasCategorias.filter(c => c.habilitar === 0);
+    }
+    // Si estado es 'todos' o no se envía parámetro, usa todasLasCategorias (trae todos)
+
+    // tree siempre se construye con las habilitadas (para mostrar la jerarquía válida)
     const categoriasHabilitadas = todasLasCategorias.filter(c => c.habilitar === 1);
     const tree = buildCategoriasTree(categoriasHabilitadas);
-    
-    // Obtener solo categorías habilitadas (para selects de producto)
+
+    // enabled siempre contiene solo las habilitadas
     const categoriasSoloHabilitadas = todasLasCategorias.filter(c => c.habilitar === 1);
 
     res.json({
@@ -63,6 +78,10 @@ const getCategorias = async (req, res) => {
         tree: tree,
         flat: todasLasCategorias.map(c => mapCategoriaRow(c)),
         enabled: categoriasSoloHabilitadas.map(c => mapCategoriaRow(c)),
+      },
+      filtros: {
+        applied: estado || "todos",
+        totalResults: categoriasFiltradas.length,
       },
     });
   } catch (error) {

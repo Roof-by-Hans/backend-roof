@@ -43,12 +43,12 @@ const getFacturas = asyncHandler(async (req, res) => {
 
   // Filtrar por rango de fechas
   if (desde) {
-    query += ` AND f.fecha >= ?`;
+    query += ` AND DATE(f.fecha) >= ?`;
     params.push(desde);
   }
 
   if (hasta) {
-    query += ` AND f.fecha <= ?`;
+    query += ` AND DATE(f.fecha) <= ?`;
     params.push(hasta);
   }
 
@@ -164,12 +164,12 @@ const getFacturasPorCliente = asyncHandler(async (req, res) => {
 
   // Filtrar por rango de fechas
   if (desde) {
-    query += ` AND f.fecha >= ?`;
+    query += ` AND DATE(f.fecha) >= ?`;
     params.push(desde);
   }
 
   if (hasta) {
-    query += ` AND f.fecha <= ?`;
+    query += ` AND DATE(f.fecha) <= ?`;
     params.push(hasta);
   }
 
@@ -214,12 +214,12 @@ const getProductosConsumidosPorCliente = asyncHandler(async (req, res) => {
 
   // Filtrar por rango de fechas
   if (desde) {
-    query += ` AND f.fecha >= ?`;
+    query += ` AND DATE(f.fecha) >= ?`;
     params.push(desde);
   }
 
   if (hasta) {
-    query += ` AND f.fecha <= ?`;
+    query += ` AND DATE(f.fecha) <= ?`;
     params.push(hasta);
   }
 
