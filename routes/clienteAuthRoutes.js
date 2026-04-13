@@ -315,7 +315,13 @@ router.delete("/foto", authClienteMiddleware, eliminarFoto);
  * /api/auth-cliente/resumen:
  *   get:
  *     summary: Obtener resumen de cuenta del cliente
- *     description: Retorna el saldo actual y, para clientes CREDITO, informacion de limite mensual
+ *     description: |
+ *       Retorna el saldo actual y, para clientes CREDITO, información de límite y consumo mensual.
+ *
+ *       Semántica para CREDITO:
+ *       - `saldoActual`: deuda pendiente real.
+ *       - `consumidoMes`: consumo del mes (dato informativo).
+ *       - `limiteRestante`: se calcula por deuda pendiente real: `max(limiteTotal - saldoActual, 0)`.
  *     tags: [Cliente Autenticado]
  *     security:
  *       - BearerAuth: []
@@ -373,6 +379,7 @@ router.delete("/foto", authClienteMiddleware, eliminarFoto);
  *                     limiteRestante:
  *                       type: number
  *                       example: 31800
+ *                       description: Para CREDITO se calcula con saldoActual (deuda pendiente), no con consumidoMes.
  *                     periodo:
  *                       type: object
  *                       properties:

@@ -167,12 +167,12 @@ const getResumenCuenta = asyncHandler(async (req, res) => {
     : 0;
 
   const limiteRestante = esCredito
-    ? Math.max(limiteTotal - consumidoMes, 0)
+    ? Math.max(limiteTotal - saldoActual, 0)
     : 0;
 
-  if (esCredito && consumidoMes > limiteTotal) {
+  if (esCredito && saldoActual > limiteTotal) {
     console.warn(
-      `Inconsistencia de credito para cliente ${clienteId}: consumidoMes (${consumidoMes}) > limiteTotal (${limiteTotal})`
+      `Inconsistencia de credito para cliente ${clienteId}: saldoActual (${saldoActual}) > limiteTotal (${limiteTotal})`
     );
   }
 
