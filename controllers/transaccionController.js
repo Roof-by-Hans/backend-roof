@@ -623,10 +623,12 @@ const registrarPago = async (req, res) => {
       const [clienteRows] = await connection.execute(
         `SELECT c.id_cliente, c.nombre, c.apellido,
               t.id_tarjeta, t.saldo_actual,
-              ts.nombre AS tipo_suscripcion
+              ts.nombre AS tipo_suscripcion,
+              ns.limite_credito
        FROM Cliente c
        LEFT JOIN Tarjeta t ON c.id_tarjeta = t.id_tarjeta
        LEFT JOIN TipoSuscripcion ts ON t.id_tipo_suscripcion = ts.id_tipo
+       LEFT JOIN NivelSuscripcion ns ON t.id_nivel_suscripcion = ns.id_nivel
        WHERE c.id_cliente = ?`,
         [idCliente]
       );
@@ -716,6 +718,11 @@ const registrarPago = async (req, res) => {
       );
 
       const deudaNueva = deudaAnterior - montoPago;
+      const limiteTotalCredito = parseFloat(cliente.limite_credito || 0);
+      const limiteRestanteCredito =
+        cliente.tipo_suscripcion === "CREDITO"
+          ? Math.max(limiteTotalCredito - deudaNueva, 0)
+          : null;
 
       // 5. Si se especificó una factura, actualizar su estado si corresponde
       let facturaActualizada = false;
@@ -783,6 +790,9 @@ const registrarPago = async (req, res) => {
           deudaAnterior: deudaAnterior,
           montoPagado: montoPago,
           deudaActual: deudaNueva,
+          limiteTotal: cliente.tipo_suscripcion === "CREDITO" ? limiteTotalCredito : null,
+          limiteRestante:
+            cliente.tipo_suscripcion === "CREDITO" ? limiteRestanteCredito : null,
         },
         movimientoCajaRegistrado: movimientoCajaRegistrado,
         ...(facturaInfo && {

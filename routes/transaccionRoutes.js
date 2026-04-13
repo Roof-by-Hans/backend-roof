@@ -427,6 +427,9 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *       **Proceso:**
  *       - Se registra MovimientoCuenta con tipo PAGO (id_tipo_mov referencia a TipoMovimiento)
  *       - Se reduce la deuda de la tarjeta: `saldo_actual -= monto`
+ *       - Para tarjetas CRÉDITO, se devuelve el límite actualizado para refresco inmediato de dashboards:
+ *         - `saldos.limiteTotal`
+ *         - `saldos.limiteRestante = max(limiteTotal - deudaActual, 0)`
  *       - Si se especifica idFactura y el pago es >= total de la factura, se actualiza estado a COBRADA
  *       - Si hay caja abierta del día, se registra INGRESO en MovimientoCaja
  *       - Se vincula el MovimientoCaja con el MovimientoCuenta mediante id_movimiento_cuenta
@@ -523,6 +526,18 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *                           format: float
  *                           example: 35000.00
  *                           description: Deuda después del pago (saldo_actual)
+ *                         limiteTotal:
+ *                           type: number
+ *                           format: float
+ *                           nullable: true
+ *                           example: 120000.00
+ *                           description: Solo para CREDITO. Límite total asignado al cliente.
+ *                         limiteRestante:
+ *                           type: number
+ *                           format: float
+ *                           nullable: true
+ *                           example: 85000.00
+ *                           description: Solo para CREDITO. Límite disponible calculado como limiteTotal - deudaActual.
  *                     movimientoCajaRegistrado:
  *                       type: boolean
  *                       example: true
