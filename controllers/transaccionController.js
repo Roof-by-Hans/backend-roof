@@ -2,6 +2,7 @@ const { promisePool } = require("../config/database");
 const { mapFacturaConDetalles } = require("../helpers/facturaMapper");
 const { mapMesaConGrupoRows } = require("../helpers/mesaGrupoMapper");
 const { withTransaction } = require("../helpers/transactionHelper");
+const validarCajaAbierta = require("../helpers/validarCajaAbierta");
 const { enviarError, enviarExito } = require("../helpers/responseHelpers");
 const {
   emitMesaEstadoCambiado,
@@ -432,6 +433,8 @@ const registrarConsumo = async (req, res) => {
 const registrarRecarga = async (req, res) => {
   try {
     const result = await withTransaction(async (connection) => {
+      
+      await validarCajaAbierta(connection);
       const { idCliente, monto, metodoPago, observaciones } = req.body;
 
       // Validaciones
@@ -601,6 +604,8 @@ const registrarRecarga = async (req, res) => {
 const registrarPago = async (req, res) => {
   try {
     const result = await withTransaction(async (connection) => {
+      
+      await validarCajaAbierta(connection);
       const { idCliente, monto, metodoPago, idFactura, observaciones } = req.body;
 
       // Validaciones
