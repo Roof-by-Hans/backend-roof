@@ -16,6 +16,7 @@ const getTarjetas = async (req, res) => {
        FROM Tarjeta t
        LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
        LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
+       WHERE t.habilitar = 1
        ORDER BY t.id_tarjeta DESC`
     );
 
@@ -49,7 +50,7 @@ const getTarjetaPorId = async (req, res) => {
        FROM Tarjeta t
        LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
        LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
-       WHERE t.id_tarjeta = ?`,
+       WHERE t.id_tarjeta = ? AND t.habilitar = 1`,
       [id]
     );
 
@@ -90,30 +91,30 @@ const crearTarjeta = async (req, res) => {
       });
     }
 
-    // Verificar que el tipo de suscripción existe
+    // Verificar que el tipo de suscripción existe y está habilitado
     const [tipoRows] = await promisePool.execute(
-      `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ?`,
+      `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ? AND habilitar = 1`,
       [idTipoSuscripcion]
     );
 
     if (tipoRows.length === 0) {
       return res.status(404).json({
         success: false,
-        message: "El tipo de suscripción especificado no existe",
+        message: "El tipo de suscripción especificado no existe o está deshabilitado",
       });
     }
 
-    // Verificar que el nivel de suscripción existe (si se proporciona)
+    // Verificar que el nivel de suscripción existe y está habilitado (si se proporciona)
     if (idNivelSuscripcion) {
       const [nivelRows] = await promisePool.execute(
-        `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
+        `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ? AND habilitar = 1`,
         [idNivelSuscripcion]
       );
 
       if (nivelRows.length === 0) {
         return res.status(404).json({
           success: false,
-          message: "El nivel de suscripción especificado no existe",
+          message: "El nivel de suscripción especificado no existe o está deshabilitado",
         });
       }
     }
@@ -130,8 +131,8 @@ const crearTarjeta = async (req, res) => {
     }
 
     const [result] = await promisePool.execute(
-      `INSERT INTO Tarjeta (uuid, id_tipo_suscripcion, id_nivel_suscripcion, saldo_actual)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO Tarjeta (uuid, id_tipo_suscripcion, id_nivel_suscripcion, saldo_actual, habilitar)
+       VALUES (?, ?, ?, ?, 1)`,
       [uuid, idTipoSuscripcion, idNivelSuscripcion || null, saldoFinal]
     );
 
@@ -171,9 +172,9 @@ const actualizarTarjeta = async (req, res) => {
     const { id } = req.params;
     const { idTipoSuscripcion, idNivelSuscripcion, saldoActual } = req.body;
 
-    // Verificar que la tarjeta existe
+    // Verificar que la tarjeta existe y está habilitada
     const [tarjetaExistente] = await promisePool.execute(
-      `SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ?`,
+      `SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ? AND habilitar = 1`,
       [id]
     );
 
@@ -189,16 +190,16 @@ const actualizarTarjeta = async (req, res) => {
     const valores = [];
 
     if (idTipoSuscripcion !== undefined) {
-      // Verificar que el tipo existe
+      // Verificar que el tipo existe y está habilitado
       const [tipoRows] = await promisePool.execute(
-        `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ?`,
+        `SELECT id_tipo FROM TipoSuscripcion WHERE id_tipo = ? AND habilitar = 1`,
         [idTipoSuscripcion]
       );
 
       if (tipoRows.length === 0) {
         return res.status(404).json({
           success: false,
-          message: "El tipo de suscripción especificado no existe",
+          message: "El tipo de suscripción especificado no existe o está deshabilitado",
         });
       }
       campos.push("id_tipo_suscripcion = ?");
@@ -206,16 +207,16 @@ const actualizarTarjeta = async (req, res) => {
     }
 
     if (idNivelSuscripcion !== undefined) {
-      // Verificar que el nivel existe
+      // Verificar que el nivel existe y está habilitado
       const [nivelRows] = await promisePool.execute(
-        `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ?`,
+        `SELECT id_nivel FROM NivelSuscripcion WHERE id_nivel = ? AND habilitar = 1`,
         [idNivelSuscripcion]
       );
 
       if (nivelRows.length === 0) {
         return res.status(404).json({
           success: false,
-          message: "El nivel de suscripción especificado no existe",
+          message: "El nivel de suscripción especificado no existe o está deshabilitado",
         });
       }
       campos.push("id_nivel_suscripcion = ?");
@@ -276,9 +277,9 @@ const eliminarTarjeta = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verificar que la tarjeta existe
+    // Verificar que la tarjeta existe y está habilitada
     const [tarjetaExistente] = await promisePool.execute(
-      `SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ?`,
+      `SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ? AND habilitar = 1`,
       [id]
     );
 
@@ -289,11 +290,15 @@ const eliminarTarjeta = async (req, res) => {
       });
     }
 
-    await promisePool.execute(`DELETE FROM Tarjeta WHERE id_tarjeta = ?`, [id]);
+    // Borrado lógico
+    await promisePool.execute(
+      `UPDATE Tarjeta SET habilitar = 0 WHERE id_tarjeta = ?`,
+      [id]
+    );
 
     res.json({
       success: true,
-      message: "Tarjeta eliminada exitosamente",
+      message: "Tarjeta deshabilitada exitosamente",
     });
   } catch (error) {
     console.error("Error al eliminar tarjeta:", error);
@@ -333,9 +338,9 @@ const actualizarSaldo = async (req, res) => {
       });
     }
 
-    // Verificar que la tarjeta existe y obtener saldo actual
+    // Verificar que la tarjeta existe, está habilitada y obtener saldo actual
     const [tarjetaRows] = await promisePool.execute(
-      `SELECT id_tarjeta, saldo_actual FROM Tarjeta WHERE id_tarjeta = ?`,
+      `SELECT id_tarjeta, saldo_actual FROM Tarjeta WHERE id_tarjeta = ? AND habilitar = 1`,
       [id]
     );
 
@@ -405,9 +410,9 @@ const regenerarUUID = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Verificar que la tarjeta existe
+    // Verificar que la tarjeta existe y está habilitada
     const [tarjetaRows] = await promisePool.execute(
-      `SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ?`,
+      `SELECT id_tarjeta FROM Tarjeta WHERE id_tarjeta = ? AND habilitar = 1`,
       [id]
     );
 
@@ -841,7 +846,7 @@ const verificarUidExistente = async (req, res) => {
        LEFT JOIN TipoSuscripcion ts ON ts.id_tipo = t.id_tipo_suscripcion
        LEFT JOIN NivelSuscripcion ns ON ns.id_nivel = t.id_nivel_suscripcion
        LEFT JOIN Cliente c ON c.id_tarjeta = t.id_tarjeta
-       WHERE t.uuid = ?`,
+       WHERE t.uuid = ? AND t.habilitar = 1`,
       [uidNormalizado]
     );
 

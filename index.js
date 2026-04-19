@@ -13,6 +13,7 @@ const { initializeWebSocket } = require("./config/websocket");
 const { handleMulterError } = require("./config/multer");
 const authRoutes = require("./routes/authRoutes");
 const authClienteRoutes = require("./routes/authClienteRoutes");
+const clienteAuthRoutes = require("./routes/clienteAuthRoutes");
 const clienteRoutes = require("./routes/clienteRoutes");
 const usuarioRoutes = require("./routes/usuarioRoutes");
 const categoriaProductoRoutes = require("./routes/categoriaProductoRoutes");
@@ -27,6 +28,7 @@ const mesaGrupoRoutes = require("./routes/mesaGrupoRoutes");
 const mesaRoutes = require("./routes/mesaRoutes");
 const cajaDiariaRoutes = require("./routes/cajaDiariaRoutes");
 const mozoRoutes = require("./routes/mozoRoutes");
+const medioPagoRoutes = require("./routes/medioPagoRoutes");
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
@@ -37,19 +39,20 @@ app.use(
     origin: "*",
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
-// Habilitar compresión HTTP (gzip/deflate)
-app.use(compression({
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) {
-      return false;
-    }
-    return compression.filter(req, res);
-  },
-  level: 6 // Balance entre velocidad y compresión
-}));
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.headers["x-no-compression"]) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+    level: 6,
+  }),
+);
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -59,6 +62,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/auth-cliente", authClienteRoutes);
+app.use("/api/auth-cliente", clienteAuthRoutes);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/mozos", mozoRoutes);
@@ -74,6 +78,7 @@ app.use("/api/transacciones", transaccionRoutes);
 app.use("/api/mesas", mesaRoutes);
 app.use("/api/mesas-grupo", mesaGrupoRoutes);
 app.use("/api/caja-diaria", cajaDiariaRoutes);
+app.use("/api/medios-pago", medioPagoRoutes);
 
 app.get("/", (req, res) => {
   res.send("Backend Roof by Hans");
@@ -139,7 +144,7 @@ console.log("🔌 WebSocket configurado y disponible en rutas");
 server.listen(PORT, async () => {
   console.log(`🚀 Servidor ejecutándose en http://localhost:${PORT}`);
   console.log(
-    `📚 Documentación disponible en http://localhost:${PORT}/api-docs`
+    `📚 Documentación disponible en http://localhost:${PORT}/api-docs`,
   );
 
   await testConnection();

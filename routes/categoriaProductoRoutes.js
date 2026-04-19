@@ -5,6 +5,7 @@ const {
   crearCategoria,
   actualizarCategoria,
   eliminarCategoria,
+  toggleCategoria,
 } = require("../controllers/categoriaProductoController");
 const { authenticate } = require("../middlewares/authMiddleware");
 
@@ -105,9 +106,20 @@ const router = express.Router();
  * /api/categorias-producto:
  *   get:
  *     summary: Listar todas las categorías
+ *     description: Soporta filtro por estado mediante el parámetro query `estado`.
  *     tags: [CategoriasProducto]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: estado
+ *         required: false
+ *         description: Filtro por estado de habilitación
+ *         schema:
+ *           type: string
+ *           enum: [habilitados, deshabilitados, todos]
+ *           default: todos
+ *         example: habilitados
  *     responses:
  *       200:
  *         description: Listado jerárquico de categorías
@@ -243,6 +255,49 @@ router.post("/", authenticate, crearCategoria);
  *         $ref: '#/components/responses/InternalServerError'
  */
 router.put("/:id", authenticate, actualizarCategoria);
+
+/**
+ * @swagger
+ * /api/categorias-producto/{id}/toggle:
+ *   patch:
+ *     summary: Toggle el estado de habilitación de una categoría
+ *     description: Cambia el estado de habilitación de una categoría de habilitado a deshabilitado o viceversa.
+ *     tags: [CategoriasProducto]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - $ref: '#/components/parameters/CategoriaProductoId'
+ *     responses:
+ *       200:
+ *         description: Estado toggled correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Categoría deshabilitada correctamente
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 5
+ *                     habilitar:
+ *                       type: integer
+ *                       example: 0
+ *       401:
+ *         $ref: '#/components/responses/UnauthorizedError'
+ *       404:
+ *         $ref: '#/components/responses/NotFoundError'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.patch("/:id/toggle", authenticate, toggleCategoria);
 
 /**
  * @swagger

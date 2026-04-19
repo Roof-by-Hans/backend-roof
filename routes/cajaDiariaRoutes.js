@@ -8,6 +8,7 @@ const {
   obtenerDetalleCaja,
   obtenerMovimientosCaja,
   obtenerAuditoriaCaja,
+  registrarMovimientoManual,
 } = require("../controllers/cajaDiariaController");
 const {
   authenticate,
@@ -267,6 +268,91 @@ router.post("/abrir", authenticate, authorizeAdmin, abrirCajaDiaria);
  *         description: Error interno del servidor
  */
 router.post("/cerrar", authenticate, authorizeAdmin, cerrarCajaDiaria);
+
+/**
+ * @swagger
+ * /api/caja-diaria/movimiento-manual:
+ *   post:
+ *     summary: Registrar un movimiento manual en la caja
+ *     description: Permite registrar ingresos o egresos manuales (ej. compra de insumos, pago a proveedor) en la caja abierta.
+ *     tags: [CajaDiaria]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - tipo
+ *               - monto
+ *               - concepto
+ *               - metodoPago
+ *             properties:
+ *               tipo:
+ *                 type: string
+ *                 enum: [INGRESO, EGRESO]
+ *                 description: Tipo de movimiento
+ *                 example: "EGRESO"
+ *               monto:
+ *                 type: number
+ *                 description: Monto del movimiento
+ *                 example: 1500.50
+ *               concepto:
+ *                 type: string
+ *                 description: Razón o descripción del movimiento
+ *                 example: "Compra de hielo"
+ *               metodoPago:
+ *                 type: string
+ *                 description: Nombre del medio de pago utilizado
+ *                 example: "EFECTIVO"
+ *     responses:
+ *       201:
+ *         description: Movimiento registrado correctamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Movimiento manual registrado correctamente"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: integer
+ *                       example: 45
+ *                     tipo:
+ *                       type: string
+ *                       example: "EGRESO"
+ *                     monto:
+ *                       type: number
+ *                       example: 1500.50
+ *                     concepto:
+ *                       type: string
+ *                       example: "Compra de hielo"
+ *       400:
+ *         description: Datos inválidos
+ *       401:
+ *         description: Falta autenticación
+ *       403:
+ *         description: Falta de permisos
+ *       409:
+ *         description: No hay caja abierta
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post(
+  "/movimiento-manual",
+  authenticate,
+  authorizeAdmin,
+  registrarMovimientoManual
+);
 
 /**
  * @swagger

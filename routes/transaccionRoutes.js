@@ -4,6 +4,7 @@ const {
   registrarConsumo,
   registrarRecarga,
   registrarPago,
+  revertirFactura,
 } = require("../controllers/transaccionController");
 const {
   authenticate,
@@ -426,6 +427,9 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *       **Proceso:**
  *       - Se registra MovimientoCuenta con tipo PAGO (id_tipo_mov referencia a TipoMovimiento)
  *       - Se reduce la deuda de la tarjeta: `saldo_actual -= monto`
+ *       - Para tarjetas CRÉDITO, se devuelve el límite actualizado para refresco inmediato de dashboards:
+ *         - `saldos.limiteTotal`
+ *         - `saldos.limiteRestante = max(limiteTotal - deudaActual, 0)`
  *       - Si se especifica idFactura y el pago es >= total de la factura, se actualiza estado a COBRADA
  *       - Si hay caja abierta del día, se registra INGRESO en MovimientoCaja
  *       - Se vincula el MovimientoCaja con el MovimientoCuenta mediante id_movimiento_cuenta
@@ -522,6 +526,18 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *                           format: float
  *                           example: 35000.00
  *                           description: Deuda después del pago (saldo_actual)
+ *                         limiteTotal:
+ *                           type: number
+ *                           format: float
+ *                           nullable: true
+ *                           example: 120000.00
+ *                           description: Solo para CREDITO. Límite total asignado al cliente.
+ *                         limiteRestante:
+ *                           type: number
+ *                           format: float
+ *                           nullable: true
+ *                           example: 85000.00
+ *                           description: Solo para CREDITO. Límite disponible calculado como limiteTotal - deudaActual.
  *                     movimientoCajaRegistrado:
  *                       type: boolean
  *                       example: true
@@ -566,5 +582,139 @@ router.post("/recarga", authenticate, authorizeAdmin, registrarRecarga);
  *         description: Error interno del servidor
  */
 router.post("/pago", authenticate, authorizeAdmin, registrarPago);
+
+/**
+ * @swagger
+ * /api/transacciones/revertir/{idFactura}:
+ *   post:
+ *     summary: Revertir una factura (rollback de pago)
+ *     description: |
+ *       Revierte el impacto financiero completo de una factura COBRADA o PENDIENTE.
+ *
+ *       **Efectos según tipo de tarjeta y estado:**
+ *       - **PREPAGA / COBRADA**: Devuelve el saldo descontado (`saldo_actual += total`). Registra EGRESO en caja.
+ *       - **CRÉDITO / PENDIENTE**: Cancela la deuda acumulada (`saldo_actual -= total`). Sin movimiento de caja.
+ *       - **CRÉDITO / COBRADA**: Deshace consumo y pago (`saldo_actual += totalPagado - total`). Registra EGRESO en caja por el monto pagado.
+ *
+ *       **Mesa/Grupo:** Si la mesa o las mesas del grupo están ocupadas por el mismo cliente, se liberan automáticamente (`DISPONIBLE`).
+ *
+ *       **Caja:** Si no hay caja abierta para el día actual, el movimiento de egreso se omite y la respuesta incluye `warning: "PAGO_REVERTIDO_SIN_CAJA"`. El operador deberá asentar el egreso manualmente.
+ *
+ *       **Idempotencia:** Intentar revertir una factura ya `ANULADA` devuelve `409`.
+ *     tags: [Transacciones]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: idFactura
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: ID de la factura a revertir
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - motivo
+ *             properties:
+ *               motivo:
+ *                 type: string
+ *                 description: Motivo de la reversión (requerido para auditoría)
+ *                 example: "Error en el pedido, se cargaron productos equivocados"
+ *     responses:
+ *       200:
+ *         description: Factura revertida exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Factura revertida exitosamente"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     factura:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: integer
+ *                           example: 42
+ *                         idCliente:
+ *                           type: integer
+ *                           example: 5
+ *                         idMesa:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: 3
+ *                         idGrupo:
+ *                           type: integer
+ *                           nullable: true
+ *                           example: null
+ *                         estadoAnterior:
+ *                           type: string
+ *                           enum: [COBRADA, PENDIENTE]
+ *                           example: "COBRADA"
+ *                         estadoActual:
+ *                           type: string
+ *                           example: "ANULADA"
+ *                         total:
+ *                           type: number
+ *                           format: float
+ *                           example: 15000.00
+ *                     saldos:
+ *                       type: object
+ *                       properties:
+ *                         anterior:
+ *                           type: number
+ *                           format: float
+ *                           example: 35000.00
+ *                         delta:
+ *                           type: number
+ *                           format: float
+ *                           description: Variación aplicada al saldo de la tarjeta (positivo = se sumó, negativo = se restó)
+ *                           example: 15000.00
+ *                         actual:
+ *                           type: number
+ *                           format: float
+ *                           example: 50000.00
+ *                         tipoTarjeta:
+ *                           type: string
+ *                           enum: [PREPAGA, CREDITO]
+ *                           example: "PREPAGA"
+ *                     movimientoCajaRegistrado:
+ *                       type: boolean
+ *                       example: true
+ *                     mesasRestauradas:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           idMesa:
+ *                             type: integer
+ *                             example: 3
+ *                     warning:
+ *                       type: string
+ *                       description: Presente solo si no había caja abierta y el egreso no pudo registrarse
+ *                       example: "PAGO_REVERTIDO_SIN_CAJA"
+ *       400:
+ *         description: Motivo no proporcionado o estado de factura no reversible
+ *       404:
+ *         description: Factura no encontrada
+ *       409:
+ *         description: La factura ya está anulada
+ *       401:
+ *         description: No autorizado
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post("/revertir/:idFactura", authenticate, authorizeAdmin, revertirFactura);
 
 module.exports = router;

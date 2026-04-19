@@ -16,6 +16,7 @@ const mapUsuarioRow = (row) => {
   return {
     id: row.id_usuario,
     nombreUsuario: row.nombre_usuario,
+    email: row.email || null,
     activo:
       row.activo === null ? null : row.activo === 1 || row.activo === true,
     fotoPerfil: row.foto_perfil || null,

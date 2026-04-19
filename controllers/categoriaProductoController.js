@@ -8,7 +8,18 @@ const {
 const fetchCategorias = async () => {
   const [rows] = await promisePool.execute(
     `SELECT id_categoria, nombre, id_cat_padre
-     FROM CategoriaProducto`
+     FROM CategoriaProducto
+     WHERE habilitar = 1`
+  );
+
+  return rows;
+};
+
+const fetchAllCategorias = async () => {
+  const [rows] = await promisePool.execute(
+    `SELECT id_categoria, nombre, id_cat_padre, habilitar
+     FROM CategoriaProducto
+     ORDER BY habilitar DESC, nombre ASC`
   );
 
   return rows;
@@ -33,15 +44,45 @@ const parseParentId = (valor) => {
   return numero;
 };
 
+/**
+ * Obtener todas las categorías
+ * @query {string} estado - Filtro por estado: 'habilitados' (default), 'deshabilitados', 'todos'
+ */
 const getCategorias = async (req, res) => {
   try {
-    const rows = await fetchCategorias();
-    const tree = buildCategoriasTree(rows);
+    const { estado } = req.query;
+
+    // Obtener todas las categorías con su estado de habilitación
+    const todasLasCategorias = await fetchAllCategorias();
+
+    // Filtrar según el parámetro estado
+    let categoriasFiltradas = todasLasCategorias;
+    if (estado === "habilitados") {
+      categoriasFiltradas = todasLasCategorias.filter(c => c.habilitar === 1);
+    } else if (estado === "deshabilitados") {
+      categoriasFiltradas = todasLasCategorias.filter(c => c.habilitar === 0);
+    }
+    // Si estado es 'todos' o no se envía parámetro, usa todasLasCategorias (trae todos)
+
+    // tree siempre se construye con las habilitadas (para mostrar la jerarquía válida)
+    const categoriasHabilitadas = todasLasCategorias.filter(c => c.habilitar === 1);
+    const tree = buildCategoriasTree(categoriasHabilitadas);
+
+    // enabled siempre contiene solo las habilitadas
+    const categoriasSoloHabilitadas = todasLasCategorias.filter(c => c.habilitar === 1);
 
     res.json({
       success: true,
       message: "Categorías obtenidas correctamente",
-      data: tree,
+      data: {
+        tree: tree,
+        flat: todasLasCategorias.map(c => mapCategoriaRow(c)),
+        enabled: categoriasSoloHabilitadas.map(c => mapCategoriaRow(c)),
+      },
+      filtros: {
+        applied: estado || "todos",
+        totalResults: categoriasFiltradas.length,
+      },
     });
   } catch (error) {
     console.error("Error al obtener categorías:", error);
@@ -316,9 +357,22 @@ const eliminarCategoria = async (req, res) => {
       });
     }
 
+    // Verificar si la categoría existe y está habilitada
+    const [existe] = await promisePool.execute(
+      `SELECT id_categoria FROM CategoriaProducto WHERE id_categoria = ? AND habilitar = 1`,
+      [id]
+    );
+
+    if (existe.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Categoría no encontrada",
+      });
+    }
+
+    // Borrado lógico: marcar como deshabilitada
     const [result] = await promisePool.execute(
-      `DELETE FROM CategoriaProducto
-       WHERE id_categoria = ?`,
+      `UPDATE CategoriaProducto SET habilitar = 0 WHERE id_categoria = ?`,
       [id]
     );
 
@@ -331,11 +385,73 @@ const eliminarCategoria = async (req, res) => {
 
     res.json({
       success: true,
-      message: "Categoría eliminada correctamente",
+      message: "Categoría deshabilitada correctamente",
       data: { id },
     });
   } catch (error) {
     console.error("Error al eliminar categoría:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
+const toggleCategoria = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (Number.isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "El identificador de la categoría no es válido",
+      });
+    }
+
+    // Verificar que la categoría existe
+    const [categorias] = await promisePool.execute(
+      `SELECT id_categoria, nombre, habilitar FROM CategoriaProducto WHERE id_categoria = ?`,
+      [id]
+    );
+
+    if (categorias.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Categoría no encontrada",
+      });
+    }
+
+    // Toggle: cambiar habilitar de 1 a 0 o de 0 a 1
+    const nuevoEstado = categorias[0].habilitar === 1 ? 0 : 1;
+
+    // Si se está intentando deshabilitar, verificar que no tenga productos asociados
+    if (nuevoEstado === 0) {
+      const [productos] = await promisePool.execute(
+        `SELECT COUNT(*) as cantidad FROM Producto WHERE id_categoria = ?`,
+        [id]
+      );
+
+      if (productos[0].cantidad > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `No se puede deshabilitar la categoría porque tiene ${productos[0].cantidad} producto(s) asociado(s). Desasocie los productos primero.`,
+        });
+      }
+    }
+
+    await promisePool.execute(
+      `UPDATE CategoriaProducto SET habilitar = ? WHERE id_categoria = ?`,
+      [nuevoEstado, id]
+    );
+
+    res.json({
+      success: true,
+      message: nuevoEstado === 1 ? "Categoría habilitada correctamente" : "Categoría deshabilitada correctamente",
+      data: { id, habilitar: nuevoEstado },
+    });
+  } catch (error) {
+    console.error("Error al toggle categoría:", error);
     res.status(500).json({
       success: false,
       message: "Error interno del servidor",
@@ -350,4 +466,5 @@ module.exports = {
   crearCategoria,
   actualizarCategoria,
   eliminarCategoria,
+  toggleCategoria,
 };

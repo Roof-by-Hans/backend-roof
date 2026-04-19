@@ -40,7 +40,7 @@ const categoriaExiste = async (idCategoria) => {
   const [rows] = await promisePool.execute(
     `SELECT id_categoria
      FROM CategoriaProducto
-     WHERE id_categoria = ?
+     WHERE id_categoria = ? AND habilitar = 1
      LIMIT 1`,
     [idCategoria]
   );
@@ -59,15 +59,32 @@ const obtenerProductoPorId = async (id) => {
             c.nombre AS nombre_categoria
        FROM Producto p
        INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
-      WHERE p.id_producto = ?`,
+       WHERE p.id_producto = ? AND p.habilitar = 1`,
     [id]
   );
 
   return rows[0] || null;
 };
 
+/**
+ * Obtener todos los productos
+ * @query {string} estado - Filtro por estado: 'habilitados' (default), 'deshabilitados', 'todos'
+ */
 const getProductos = async (req, res) => {
   try {
+    const { estado } = req.query;
+
+    // Construir WHERE dinámico según el parámetro estado
+    let whereClause = "";
+    let queryParams = [];
+
+    if (estado === "habilitados") {
+      whereClause = "WHERE p.habilitar = 1";
+    } else if (estado === "deshabilitados") {
+      whereClause = "WHERE p.habilitar = 0";
+    }
+    // Si estado es 'todos' o no se envía parámetro, no se aplica filtro (trae todos)
+
     const [rows] = await promisePool.execute(
       `SELECT p.id_producto,
               p.nombre,
@@ -75,10 +92,13 @@ const getProductos = async (req, res) => {
               p.id_categoria,
               p.foto_principal,
               p.descripcion,
+              p.habilitar,
               c.nombre AS nombre_categoria
-         FROM Producto p
-         INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
-         ORDER BY p.nombre`
+       FROM Producto p
+       INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
+       ${whereClause}
+       ORDER BY p.habilitar DESC, p.nombre ASC`,
+      queryParams
     );
 
     // Agregar URL completa de las imágenes
@@ -101,6 +121,55 @@ const getProductos = async (req, res) => {
     });
   } catch (error) {
     console.error("Error al obtener productos:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Obtener solo productos habilitados para pedidos
+ * GET /api/productos/habilitados
+ */
+const getProductosHabilitados = async (req, res) => {
+  try {
+    const [rows] = await promisePool.execute(
+      `SELECT p.id_producto,
+              p.nombre,
+              p.precio_unitario,
+              p.id_categoria,
+              p.foto_principal,
+              p.descripcion,
+              p.habilitar,
+              c.nombre AS nombre_categoria
+       FROM Producto p
+       INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
+       WHERE p.habilitar = 1 AND c.habilitar = 1
+       ORDER BY c.nombre ASC, p.nombre ASC`
+    );
+
+    // Agregar URL completa de las imágenes
+    const productosConImagenes = rows.map((row) => {
+      const producto = mapProductoRow(row);
+      if (producto.fotoPrincipal) {
+        producto.fotoPrincipalUrl = getFileUrl(
+          req,
+          producto.fotoPrincipal,
+          "productos"
+        );
+      }
+      return producto;
+    });
+
+    res.json({
+      success: true,
+      message: "Productos habilitados obtenidos correctamente",
+      data: productosConImagenes,
+    });
+  } catch (error) {
+    console.error("Error al obtener productos habilitados:", error);
     res.status(500).json({
       success: false,
       message: "Error interno del servidor",
@@ -234,8 +303,8 @@ const crearProducto = async (req, res) => {
     }
 
     const [result] = await promisePool.execute(
-      `INSERT INTO Producto (nombre, precio_unitario, id_categoria, foto_principal, descripcion)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO Producto (nombre, precio_unitario, id_categoria, foto_principal, descripcion, habilitar)
+       VALUES (?, ?, ?, ?, ?, 1)`,
       [nombre, precioUnitario, idCategoria, fotoPrincipal, descripcion]
     );
 
@@ -291,9 +360,16 @@ const actualizarProducto = async (req, res) => {
       });
     }
 
-    const productoActual = await obtenerProductoPorId(id);
+    // Verificar que el producto existe y está habilitado
+    const [productoActual] = await promisePool.execute(
+      `SELECT p.id_producto, p.nombre, p.precio_unitario, p.id_categoria, p.foto_principal, p.descripcion, c.nombre AS nombre_categoria
+       FROM Producto p
+       INNER JOIN CategoriaProducto c ON c.id_categoria = p.id_categoria
+       WHERE p.id_producto = ? AND p.habilitar = 1`,
+      [id]
+    );
 
-    if (!productoActual) {
+    if (productoActual.length === 0) {
       // Si se subió una imagen, eliminarla porque el producto no existe
       if (req.file) {
         const rutaImagen = path.join(
@@ -311,6 +387,8 @@ const actualizarProducto = async (req, res) => {
         message: "Producto no encontrado",
       });
     }
+
+    const productoActualData = productoActual[0];
 
     // Función auxiliar para eliminar imagen subida en caso de error
     const eliminarImagenSubida = async () => {
@@ -404,13 +482,13 @@ const actualizarProducto = async (req, res) => {
 
     if (req.file) {
       // Si hay una imagen anterior, eliminarla
-      if (productoActual.foto_principal) {
+      if (productoActualData.foto_principal) {
         const rutaImagenAnterior = path.join(
           __dirname,
           "..",
           "uploads",
           "productos",
-          productoActual.foto_principal
+          productoActualData.foto_principal
         );
         await deleteFile(rutaImagenAnterior);
       }
@@ -419,13 +497,13 @@ const actualizarProducto = async (req, res) => {
       valores.push(req.file.filename);
     } else if (eliminarImagen) {
       // Si se solicita eliminar la imagen sin subir una nueva
-      if (productoActual.foto_principal) {
+      if (productoActualData.foto_principal) {
         const rutaImagenAnterior = path.join(
           __dirname,
           "..",
           "uploads",
           "productos",
-          productoActual.foto_principal
+          productoActualData.foto_principal
         );
         await deleteFile(rutaImagenAnterior);
       }
@@ -505,20 +583,20 @@ const eliminarProducto = async (req, res) => {
       });
     }
 
-    // Obtener el producto para eliminar la imagen asociada
-    const productoAEliminar = await obtenerProductoPorId(id);
+    // Obtener el producto para verificar que existe
+    const productoExiste = await obtenerProductoPorId(id);
 
-    if (!productoAEliminar) {
+    if (!productoExiste) {
       return res.status(404).json({
         success: false,
         message: "Producto no encontrado",
       });
     }
 
-    // Eliminar el producto de la base de datos
+    // Borrado lógico - NO eliminamos la imagen del servidor
+    // La imagen se conserva por si el producto se reactiva posteriormente
     const [result] = await promisePool.execute(
-      `DELETE FROM Producto
-       WHERE id_producto = ?`,
+      `UPDATE Producto SET habilitar = 0 WHERE id_producto = ?`,
       [id]
     );
 
@@ -529,21 +607,9 @@ const eliminarProducto = async (req, res) => {
       });
     }
 
-    // Eliminar la imagen asociada si existe
-    if (productoAEliminar.foto_principal) {
-      const rutaImagen = path.join(
-        __dirname,
-        "..",
-        "uploads",
-        "productos",
-        productoAEliminar.foto_principal
-      );
-      await deleteFile(rutaImagen);
-    }
-
     res.json({
       success: true,
-      message: "Producto eliminado correctamente",
+      message: "Producto deshabilitado correctamente",
       data: { id },
     });
   } catch (error) {
@@ -556,10 +622,59 @@ const eliminarProducto = async (req, res) => {
   }
 };
 
+const toggleProducto = async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (Number.isNaN(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "El identificador del producto no es válido",
+      });
+    }
+
+    // Verificar que el producto existe
+    const [productoActual] = await promisePool.execute(
+      `SELECT id_producto, nombre, habilitar FROM Producto WHERE id_producto = ?`,
+      [id]
+    );
+
+    if (productoActual.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Producto no encontrado",
+      });
+    }
+
+    // Toggle: cambiar habilitar de 1 a 0 o de 0 a 1
+    const nuevoEstado = productoActual[0].habilitar === 1 ? 0 : 1;
+    
+    await promisePool.execute(
+      `UPDATE Producto SET habilitar = ? WHERE id_producto = ?`,
+      [nuevoEstado, id]
+    );
+
+    res.json({
+      success: true,
+      message: nuevoEstado === 1 ? "Producto habilitado correctamente" : "Producto deshabilitado correctamente",
+      data: { id, habilitar: nuevoEstado },
+    });
+  } catch (error) {
+    console.error("Error al toggle producto:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error interno del servidor",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getProductos,
+  getProductosHabilitados,
   getProductoPorId,
   crearProducto,
   actualizarProducto,
   eliminarProducto,
+  toggleProducto,
 };

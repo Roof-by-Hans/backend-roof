@@ -10,6 +10,7 @@ const mapCategoriaRow = (row = {}) => {
     id: row.id_categoria,
     nombre: normalizeNombre(row.nombre),
     idCatPadre: row.id_cat_padre ?? null,
+    habilitar: row.habilitar ?? 1,
     children: Array.isArray(row.children) ? row.children : [],
   };
 };

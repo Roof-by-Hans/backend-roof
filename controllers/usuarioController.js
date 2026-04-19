@@ -30,18 +30,88 @@ const normalizeActivo = (valor) => {
   return Number(valor) ? 1 : 0;
 };
 
+const normalizeRolesInput = (body) => {
+  const rawRoles = body.roles ?? body["roles[]"];
+
+  if (rawRoles === undefined || rawRoles === null || rawRoles === "") {
+    return [];
+  }
+
+  if (Array.isArray(rawRoles)) {
+    return rawRoles.filter((rol) => typeof rol === "string" && rol.trim() !== "");
+  }
+
+  if (typeof rawRoles === "string") {
+    const valor = rawRoles.trim();
+    if (!valor) return [];
+
+    // Soporte opcional si llega como JSON string: ["Admin","Mozo"]
+    if (valor.startsWith("[") && valor.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(valor);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((rol) => typeof rol === "string" && rol.trim() !== "");
+        }
+      } catch (_) {
+        // Ignorar parseo fallido y tratarlo como string simple
+      }
+    }
+
+    return [valor];
+  }
+
+  return [];
+};
+
+const resolverRoles = async (roles) => {
+  const rolesEncontrados = [];
+  const rolesNoEncontrados = [];
+
+  for (const nombreRol of roles) {
+    const rol = await obtenerRolPorNombre(nombreRol);
+    if (rol) {
+      rolesEncontrados.push(rol);
+    } else {
+      rolesNoEncontrados.push(nombreRol);
+    }
+  }
+
+  return { rolesEncontrados, rolesNoEncontrados };
+};
+
+/**
+ * Obtener todos los usuarios
+ * @query {string} estado - Filtro por estado: 'habilitados' (default), 'deshabilitados', 'todos'
+ */
 const getUsuarios = async (req, res) => {
   try {
+    const { estado } = req.query;
+
+    // Construir WHERE dinámico según el parámetro estado
+    let whereClause = "";
+    let queryParams = [];
+
+    if (estado === "habilitados") {
+      whereClause = "WHERE u.activo = 1";
+    } else if (estado === "deshabilitados") {
+      whereClause = "WHERE u.activo = 0";
+    }
+    // Si estado es 'todos' o no se envía parámetro, no se aplica filtro (trae todos)
+
     const [rows] = await promisePool.execute(
       `SELECT u.id_usuario,
         u.nombre_usuario,
+        u.email,
         u.activo,
         u.foto_perfil,
         GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
-       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`
+       ${whereClause}
+       GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil
+       ORDER BY u.activo DESC, u.nombre_usuario ASC`,
+      queryParams
     );
 
     // Agregar URL completa de las imágenes de perfil
@@ -67,14 +137,15 @@ const getUsuarioPorId = async (req, res) => {
     const [rows] = await promisePool.execute(
       `SELECT u.id_usuario,
         u.nombre_usuario,
+        u.email,
         u.activo,
         u.foto_perfil,
         GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
        FROM Usuario u
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
-       WHERE u.id_usuario = ?
-       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`,
+       WHERE u.id_usuario = ? AND u.activo = 1
+       GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil`,
       [id]
     );
 
@@ -102,33 +173,51 @@ const getUsuarioPorId = async (req, res) => {
 
 const crearUsuario = async (req, res) => {
   try {
-    const { nombreUsuario, contrasena, activo, roles } = req.body;
+    const { nombreUsuario, contrasena, activo, email } = req.body;
+    const roles = normalizeRolesInput(req.body);
     const fotoPerfil = req.file ? req.file.filename : null; // Imagen subida con multer
 
     if (!nombreUsuario || !contrasena) {
       return enviarError(res, 400, "Los campos nombreUsuario y contrasena son obligatorios");
     }
 
+    if (roles.length > 0) {
+      const { rolesNoEncontrados } = await resolverRoles(roles);
+      if (rolesNoEncontrados.length > 0) {
+        return enviarError(
+          res,
+          400,
+          `Roles no válidos: ${rolesNoEncontrados.join(", ")}`
+        );
+      }
+    }
+
+    // Validar formato de email si se proporcionó
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return enviarError(res, 400, "El formato del email es inválido");
+      }
+    }
+
     const activoNormalizado = normalizeActivo(activo);
     const hashedPassword = await hashPassword(contrasena);
 
     const [result] = await promisePool.execute(
-      "INSERT INTO Usuario (nombre_usuario, contrasena, activo, foto_perfil) VALUES (?, ?, ?, ?)",
-      [nombreUsuario, hashedPassword, activoNormalizado, fotoPerfil]
+      "INSERT INTO Usuario (nombre_usuario, contrasena, activo, foto_perfil, email) VALUES (?, ?, ?, ?, ?)",
+      [nombreUsuario, hashedPassword, activoNormalizado, fotoPerfil, email || null]
     );
 
     const userId = result.insertId;
 
     // Asignar roles si se proporcionaron
-    if (roles && Array.isArray(roles) && roles.length > 0) {
-      for (const nombreRol of roles) {
-        const rol = await obtenerRolPorNombre(nombreRol);
-        if (rol) {
-          await promisePool.execute(
-            "INSERT INTO UsuarioRol (id_usuario, id_rol) VALUES (?, ?)",
-            [userId, rol.id_rol]
-          );
-        }
+    if (roles.length > 0) {
+      const { rolesEncontrados } = await resolverRoles(roles);
+      for (const rol of rolesEncontrados) {
+        await promisePool.execute(
+          "INSERT INTO UsuarioRol (id_usuario, id_rol) VALUES (?, ?)",
+          [userId, rol.id_rol]
+        );
       }
     }
 
@@ -136,6 +225,7 @@ const crearUsuario = async (req, res) => {
     const [rows] = await promisePool.execute(
       `SELECT u.id_usuario,
         u.nombre_usuario,
+        u.email,
         u.activo,
         u.foto_perfil,
         GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
@@ -143,7 +233,7 @@ const crearUsuario = async (req, res) => {
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
        WHERE u.id_usuario = ?
-       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`,
+       GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil`,
       [userId]
     );
 
@@ -162,6 +252,9 @@ const crearUsuario = async (req, res) => {
     console.error("Error al crear usuario:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
+      if (error.message.includes("email")) {
+        return enviarError(res, 409, "El email ya está registrado en otro usuario");
+      }
       return enviarError(res, 409, "El nombre de usuario ya está registrado");
     }
 
@@ -174,16 +267,41 @@ const crearUsuario = async (req, res) => {
 const actualizarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombreUsuario, contrasena, activo, roles } = req.body;
+    const { nombreUsuario, contrasena, activo, email } = req.body;
+    const roles = normalizeRolesInput(req.body);
+    const rolesUsuarioAutenticado = req.user?.roles || [];
+    const esAdmin = rolesUsuarioAutenticado.includes("Administrador");
+    const esMismoUsuario = Number(req.user?.id) === Number(id);
+    const intenta_cambiar_contrasena = contrasena !== undefined && contrasena !== null && contrasena !== "";
 
     // Obtener el usuario existente para manejar la imagen anterior
     const [usuarioExistente] = await promisePool.execute(
-      "SELECT foto_perfil FROM Usuario WHERE id_usuario = ?",
+      `SELECT u.foto_perfil,
+        GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
+       FROM Usuario u
+       LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
+       LEFT JOIN Rol r ON r.id_rol = ur.id_rol
+       WHERE u.id_usuario = ?
+       GROUP BY u.id_usuario, u.foto_perfil`,
       [id]
     );
 
     if (usuarioExistente.length === 0) {
       return enviarError(res, 404, "Usuario no encontrado");
+    }
+
+    // Validar que solo admin puede cambiar contraseña de usuarios no-admin
+    if (intenta_cambiar_contrasena && !esMismoUsuario && esAdmin) {
+      const rolesUsuarioTarget = (usuarioExistente[0].roles || "").split(",").filter(r => r.trim());
+      const esAdminTarget = rolesUsuarioTarget.includes("Administrador");
+      
+      if (!esAdminTarget) {
+        return enviarError(
+          res,
+          403,
+          "No puedes cambiar la contraseña de usuarios no-administradores desde Gestión de Usuarios"
+        );
+      }
     }
 
     const campos = [];
@@ -203,6 +321,21 @@ const actualizarUsuario = async (req, res) => {
     if (activo !== undefined) {
       campos.push("activo = ?");
       valores.push(normalizeActivo(activo));
+    }
+
+    if (email !== undefined) {
+      if (email !== null && email !== "") {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+          return enviarError(res, 400, "El formato del email es inválido");
+        }
+        campos.push("email = ?");
+        valores.push(email);
+      } else {
+        // Permite borrar el email si se pasa vacío o null
+        campos.push("email = ?");
+        valores.push(null);
+      }
     }
 
     // Manejar nueva imagen si se subió
@@ -241,7 +374,18 @@ const actualizarUsuario = async (req, res) => {
     }
 
     // Actualizar roles si se proporcionaron
-    if (roles !== undefined && Array.isArray(roles)) {
+    if (req.body.roles !== undefined || req.body["roles[]"] !== undefined) {
+      if (roles.length > 0) {
+        const { rolesNoEncontrados } = await resolverRoles(roles);
+        if (rolesNoEncontrados.length > 0) {
+          return enviarError(
+            res,
+            400,
+            `Roles no válidos: ${rolesNoEncontrados.join(", ")}`
+          );
+        }
+      }
+
       // Eliminar roles existentes
       await promisePool.execute("DELETE FROM UsuarioRol WHERE id_usuario = ?", [
         id,
@@ -249,19 +393,18 @@ const actualizarUsuario = async (req, res) => {
 
       // Asignar nuevos roles
       if (roles.length > 0) {
-        for (const nombreRol of roles) {
-          const rol = await obtenerRolPorNombre(nombreRol);
-          if (rol) {
-            await promisePool.execute(
-              "INSERT INTO UsuarioRol (id_usuario, id_rol) VALUES (?, ?)",
-              [id, rol.id_rol]
-            );
-          }
+        const { rolesEncontrados } = await resolverRoles(roles);
+        for (const rol of rolesEncontrados) {
+          await promisePool.execute(
+            "INSERT INTO UsuarioRol (id_usuario, id_rol) VALUES (?, ?)",
+            [id, rol.id_rol]
+          );
         }
       }
     }
 
-    if (campos.length === 0 && roles === undefined) {
+    const seEnviaronRoles = req.body.roles !== undefined || req.body["roles[]"] !== undefined;
+    if (campos.length === 0 && !seEnviaronRoles) {
       return enviarError(res, 400, "Debe enviar al menos un campo para actualizar");
     }
 
@@ -281,6 +424,7 @@ const actualizarUsuario = async (req, res) => {
     const [rows] = await promisePool.execute(
       `SELECT u.id_usuario,
         u.nombre_usuario,
+        u.email,
         u.activo,
         u.foto_perfil,
         GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
@@ -288,7 +432,7 @@ const actualizarUsuario = async (req, res) => {
        LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
        LEFT JOIN Rol r ON r.id_rol = ur.id_rol
        WHERE u.id_usuario = ?
-       GROUP BY u.id_usuario, u.nombre_usuario, u.activo, u.foto_perfil`,
+       GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil`,
       [id]
     );
 
@@ -306,7 +450,75 @@ const actualizarUsuario = async (req, res) => {
     console.error("Error al actualizar usuario:", error);
 
     if (error.code === "ER_DUP_ENTRY") {
+      if (error.message.includes("email")) {
+        return enviarError(res, 409, "El email ya está registrado en otro usuario");
+      }
       return enviarError(res, 409, "El nombre de usuario ya está registrado");
+    }
+
+    return enviarError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  }
+};
+
+const actualizarMiEmail = async (req, res) => {
+  try {
+    const usuarioId = req.user?.id;
+    const { email } = req.body || {};
+
+    if (!usuarioId) {
+      return enviarError(res, 401, "Usuario no autenticado");
+    }
+
+    if (email !== undefined && email !== null && email !== "") {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return enviarError(res, 400, "El formato del email es inválido");
+      }
+    }
+
+    const emailNormalizado = email && email.trim() ? email.trim() : null;
+
+    await promisePool.execute(
+      "UPDATE Usuario SET email = ? WHERE id_usuario = ?",
+      [emailNormalizado, usuarioId]
+    );
+
+    const [rows] = await promisePool.execute(
+      `SELECT u.id_usuario,
+        u.nombre_usuario,
+        u.email,
+        u.activo,
+        u.foto_perfil,
+        GROUP_CONCAT(DISTINCT r.nombre ORDER BY r.nombre SEPARATOR ',') AS roles
+       FROM Usuario u
+       LEFT JOIN UsuarioRol ur ON ur.id_usuario = u.id_usuario
+       LEFT JOIN Rol r ON r.id_rol = ur.id_rol
+       WHERE u.id_usuario = ?
+       GROUP BY u.id_usuario, u.nombre_usuario, u.email, u.activo, u.foto_perfil`,
+      [usuarioId]
+    );
+
+    if (rows.length === 0) {
+      return enviarError(res, 404, "Usuario no encontrado");
+    }
+
+    const usuarioActualizado = mapUsuarioRow(rows[0]);
+    if (usuarioActualizado.fotoPerfil) {
+      usuarioActualizado.fotoPerfilUrl = getFileUrl(
+        req,
+        usuarioActualizado.fotoPerfil,
+        "usuarios"
+      );
+    }
+
+    return enviarExito(res, usuarioActualizado, "Email actualizado correctamente");
+  } catch (error) {
+    console.error("Error al actualizar mi email:", error);
+
+    if (error.code === "ER_DUP_ENTRY") {
+      return enviarError(res, 409, "El email ya está registrado en otro usuario");
     }
 
     return enviarError(res, 500, "Error interno del servidor", {
@@ -319,9 +531,9 @@ const eliminarUsuario = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Obtener la imagen del usuario antes de eliminarlo
+    // Verificar que el usuario existe y está activo
     const [usuarioAEliminar] = await promisePool.execute(
-      "SELECT foto_perfil FROM Usuario WHERE id_usuario = ?",
+      "SELECT foto_perfil FROM Usuario WHERE id_usuario = ? AND activo = 1",
       [id]
     );
 
@@ -329,34 +541,19 @@ const eliminarUsuario = async (req, res) => {
       return enviarError(res, 404, "Usuario no encontrado");
     }
 
-    // Eliminar primero los roles del usuario (foreign key constraint)
+    // Borrado lógico: marcar como inactivo
+    // NO eliminamos la imagen del servidor - se conserva por si el usuario se reactiva
+    await promisePool.execute(
+      "UPDATE Usuario SET activo = 0 WHERE id_usuario = ?",
+      [id]
+    );
+
+    // Eliminar los roles del usuario
     await promisePool.execute("DELETE FROM UsuarioRol WHERE id_usuario = ?", [
       id,
     ]);
 
-    // Ahora eliminar el usuario
-    const [result] = await promisePool.execute(
-      "DELETE FROM Usuario WHERE id_usuario = ?",
-      [id]
-    );
-
-    if (result.affectedRows === 0) {
-      return enviarError(res, 404, "Usuario no encontrado");
-    }
-
-    // Eliminar la imagen asociada si existe
-    if (usuarioAEliminar[0].foto_perfil) {
-      const rutaImagen = path.join(
-        __dirname,
-        "..",
-        "uploads",
-        "usuarios",
-        usuarioAEliminar[0].foto_perfil
-      );
-      await deleteFile(rutaImagen);
-    }
-
-    return enviarExito(res, null, "Usuario eliminado correctamente");
+    return enviarExito(res, null, "Usuario deshabilitado correctamente");
   } catch (error) {
     console.error("Error al eliminar usuario:", error);
     return enviarError(res, 500, "Error interno del servidor", {
@@ -527,6 +724,38 @@ const asignarRolUsuario = async (req, res) => {
   }
 };
 
+const toggleUsuario = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar que el usuario existe
+    const [usuarios] = await promisePool.execute(
+      "SELECT id_usuario, activo FROM Usuario WHERE id_usuario = ?",
+      [id]
+    );
+
+    if (usuarios.length === 0) {
+      return enviarError(res, 404, "Usuario no encontrado");
+    }
+
+    // Toggle: cambiar activo de 1 a 0 o de 0 a 1
+    const nuevoEstado = usuarios[0].activo === 1 ? 0 : 1;
+
+    await promisePool.execute(
+      "UPDATE Usuario SET activo = ? WHERE id_usuario = ?",
+      [nuevoEstado, id]
+    );
+
+    return enviarExito(res, { id: Number(id), activo: nuevoEstado }, 
+      nuevoEstado === 1 ? "Usuario habilitado correctamente" : "Usuario deshabilitado correctamente");
+  } catch (error) {
+    console.error("Error al toggle usuario:", error);
+    return enviarError(res, 500, "Error interno del servidor", {
+      error: error.message,
+    });
+  }
+};
+
 const removerRolesUsuario = async (req, res) => {
   try {
     const { id } = req.params;
@@ -690,7 +919,9 @@ module.exports = {
   getUsuarioPorId,
   crearUsuario,
   actualizarUsuario,
+  actualizarMiEmail,
   eliminarUsuario,
+  toggleUsuario,
   asignarRolUsuario,
   removerRolesUsuario,
 };

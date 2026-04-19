@@ -43,12 +43,12 @@ const getFacturas = asyncHandler(async (req, res) => {
 
   // Filtrar por rango de fechas
   if (desde) {
-    query += ` AND f.fecha >= ?`;
+    query += ` AND DATE(f.fecha) >= ?`;
     params.push(desde);
   }
 
   if (hasta) {
-    query += ` AND f.fecha <= ?`;
+    query += ` AND DATE(f.fecha) <= ?`;
     params.push(hasta);
   }
 
@@ -164,12 +164,12 @@ const getFacturasPorCliente = asyncHandler(async (req, res) => {
 
   // Filtrar por rango de fechas
   if (desde) {
-    query += ` AND f.fecha >= ?`;
+    query += ` AND DATE(f.fecha) >= ?`;
     params.push(desde);
   }
 
   if (hasta) {
-    query += ` AND f.fecha <= ?`;
+    query += ` AND DATE(f.fecha) <= ?`;
     params.push(hasta);
   }
 
@@ -214,12 +214,12 @@ const getProductosConsumidosPorCliente = asyncHandler(async (req, res) => {
 
   // Filtrar por rango de fechas
   if (desde) {
-    query += ` AND f.fecha >= ?`;
+    query += ` AND DATE(f.fecha) >= ?`;
     params.push(desde);
   }
 
   if (hasta) {
-    query += ` AND f.fecha <= ?`;
+    query += ` AND DATE(f.fecha) <= ?`;
     params.push(hasta);
   }
 
@@ -354,6 +354,15 @@ const updateEstadoFactura = asyncHandler(async (req, res) => {
     return res.status(404).json({
       success: false,
       message: "Factura no encontrada",
+    });
+  }
+
+  // Las facturas COBRADAS solo pueden revertirse mediante el endpoint de rollback
+  if (facturaCheck[0].estado === "COBRADA") {
+    return res.status(409).json({
+      success: false,
+      message:
+        "No se puede cambiar el estado de una factura COBRADA directamente. Use POST /api/transacciones/revertir/:id para realizar un rollback.",
     });
   }
 

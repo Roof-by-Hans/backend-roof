@@ -21,15 +21,22 @@ const pool = mysql.createPool(poolConfig);
 
 const promisePool = pool.promise();
 
-const testConnection = async () => {
-  try {
-    const [rows] = await promisePool.execute("SELECT 1 as test");
-    console.log("✅ Conexión a la base de datos establecida correctamente");
-    return true;
-  } catch (error) {
-    console.error("❌ Error al conectar con la base de datos:", error.message);
-    return false;
+const testConnection = async (retries = 10, delay = 3000) => {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const [rows] = await promisePool.execute("SELECT 1 as test");
+      console.log("✅ Conexión a la base de datos establecida correctamente");
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ Intento ${attempt}/${retries}: Error al conectar con la base de datos: ${error.message}`);
+      if (attempt < retries) {
+        console.log(`⏳ Reintentando en ${delay/1000} segundos...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
+  console.error("❌ No se pudo conectar a la base de datos después de todos los intentos");
+  return false;
 };
 
 module.exports = {

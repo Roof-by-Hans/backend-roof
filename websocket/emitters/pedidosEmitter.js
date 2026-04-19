@@ -73,10 +73,24 @@ const emitPedidosLista = (pedidos) => {
   }
 };
 
+const emitPagoRevertido = (factura) => {
+  try {
+    const io = getIO();
+    io.to('pedidos').emit('pago:revertido', {
+      message: `Factura #${factura.id} revertida`,
+      data: factura,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error al emitir pago:revertido:', error.message);
+  }
+};
+
 module.exports = {
   emitPedidoCreado,
   emitPedidoActualizado,
   emitPedidoEliminado,
   emitPedidoCobrado,
   emitPedidosLista,
+  emitPagoRevertido,
 };
